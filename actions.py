@@ -14,7 +14,8 @@ import webbrowser
 from ctypes import wintypes
 from urllib.parse import quote
 
-BOOSTY_URL = "https://boosty.to"
+BOOSTY_URL = "https://boosty.to/stratapak/donate"
+
 
 TARGET_LANGUAGES: dict[str, str] = {
     "EN": "en",
