@@ -43,3 +43,8 @@ Limitations
 • Global hooks/hotkeys do not trigger over windows running as administrator if QuickMenu is launched without admin privileges. Run it as administrator if you need to use it in such windows.
 • Google may rate-limit frequent translation requests from a single IP — an error message will be shown in that case.
 • Tested on Windows 11, Python 3.13.
+ 
+ 
+Note:
+• SmartScreen warning: Since the .exe is built with PyInstaller and is not code-signed, Windows SmartScreen may show a warning on first launch — just click "More info" → "Run anyway" (the full source code is open in this repository).
+• Auto-install & Startup: The app automatically sets itself up on your PC and adds itself to Windows startup. Once launched, simply check your system tray (or select any text and press Alt+Q) to verify that it is up and running.
