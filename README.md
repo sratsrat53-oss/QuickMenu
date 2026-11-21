@@ -1,25 +1,35 @@
-# QuickMenu
+# ⚡ QuickMenu
 
-**QuickMenu** — лёгкая и удобная утилита для Windows, которая ускоряет повседневную работу с текстом и избавляет от лишних переключений между окнами.
+**QuickMenu** is a lightweight, fast Windows utility designed to speed up your daily workflow and eliminate unnecessary window switching.
 
-Достаточно выделить любой фрагмент текста в браузере, мессенджере или редакторе и нажать **Alt + Q** — прямо рядом с курсором появится компактное меню быстрого доступа. После выполнения действия, клика мимо или нажатия `Esc` окно плавно закрывается, не отвлекая от текущих задач.
+Simply select any text anywhere on your screen and press **`Alt + Q`** — a clean, compact action menu will appear right next to your cursor. Once you pick an action, click away, or press `Esc`, it smoothly hides back into the system tray.
 
-### Основные возможности
+---
 
-* **Мгновенный перевод (RU ↔ EN)** — переводит выделенный текст прямо во всплывающем окне и позволяет скопировать результат в один клик. При временных ограничениях сети автоматически переключается на резервный канал.
-* **Исправление раскладки (`Ghbdtn` → `Привет`)** — конвертирует случайно набранный в неверной раскладке текст и сразу заменяет его в исходном окне.
-* **Встроенный калькулятор** — быстро вычисляет математические выражения прямо из выделенного текста (поддерживает скобки, проценты и базовые операции).
-* **Поиск в Google** — мгновенно открывает поиск по выделенной фразе в браузере по умолчанию.
+### ✨ Key Features
 
-### Установка и запуск
+* 🌐 **Instant Translation (EN ↔ RU)** — Translates selected text directly inside the popup window with one-click copy support. Includes automatic fallback if the primary translation service hits a rate limit.
+* ⌨️ **Keyboard Layout Fixer (`Ghbdtn` → `Привет`)** — Accidentally typed a whole sentence in the wrong keyboard layout? Select it, click **"Replace in text"**, and QuickMenu automatically converts and retypes it in place.
+* 🧮 **Quick Math Evaluator** — Evaluates arithmetic expressions directly from highlighted text (supports parentheses, percentages, and basic operations).
+* 🔍 **Instant Google Search** — Opens a Google search for the selected phrase in your default browser.
+* 🪶 **Zero Clutter** — Runs silently in the background via the system tray without taking up taskbar space.
 
-Утилита работает в фоновом режиме через системный трей (иконка с молнией возле часов), не нагружает систему и не требует установки Python:
+---
 
-1. Перейдите во вкладку **[Releases](../../releases)**.
-2. Скачайте и запустите готовый файл **`QuickMenu.exe`**.
-3. Выделите любой текст и нажмите **`Alt + Q`**.
+### 🚀 Download & Run (No Python Required)
 
-Для запуска из исходного кода:
+1. Go to the **[Releases](../../releases)** section on the right.
+2. Download **`QuickMenu.exe`** and launch it (a lightning icon will appear in your system tray).
+3. Highlight any text and press **`Alt + Q`**.
+
+*(To exit the app, right-click the lightning icon in the system tray → **Exit**).*
+
+---
+
+### 🛠️ Run from Source
+
+If you prefer running from Python or customizing the code:
+
 ```bash
 pip install -r requirements.txt
 pythonw main.py
@@ -27,4 +37,8 @@ pythonw main.py
 
 ---
 
-Буду рад вашей поддержке на развитие проекта и новые функции: **[Поддержать на Boosty](https://boosty.to)**
+### ☕ Support the Project
+
+If QuickMenu saves you time every day, consider supporting its development and future updates:
+
+👉 **[Support on Boosty](https://boosty.to)**
