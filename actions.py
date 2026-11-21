@@ -1,17 +1,36 @@
-"""Действия QuickMenu: буфер обмена, Ctrl+C/Ctrl+V, перевод, раскладка, калькулятор, поиск."""
+"""QuickMenu actions: clipboard, Ctrl+C/Ctrl+V, translation, layout, calculator, search."""
 
 from __future__ import annotations
 
 import ast
 import ctypes
+import json
 import operator
+import os
 import re
+import sys
 import time
 import webbrowser
 from ctypes import wintypes
 from urllib.parse import quote
 
-BOOSTY_URL = "https://boosty.to/stratapak/donate"
+BOOSTY_URL = "https://boosty.to"
+
+TARGET_LANGUAGES: dict[str, str] = {
+    "EN": "en",
+    "RU": "ru",
+    "ES": "es",
+    "DE": "de",
+    "FR": "fr",
+    "JA": "ja",
+    "ZH": "zh-CN",
+    "KO": "ko",
+    "TR": "tr",
+    "PL": "pl",
+    "UK": "uk",
+}
+
+UI_LANGUAGES: dict[str, str] = {"EN": "en", "RU": "ru"}
 
 _u32 = ctypes.WinDLL("user32", use_last_error=True)
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -89,6 +108,62 @@ _PROBE = "\u0002quickmenu-probe\u0002"
 _CYRILLIC = re.compile(r"[А-Яа-яЁё]")
 
 
+# --------------------------------------------------------------------------- config
+
+def _config_path() -> str:
+    base = (
+        os.path.dirname(sys.executable)
+        if getattr(sys, "frozen", False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    return os.path.join(base, "quickmenu_config.json")
+
+
+def _read_config() -> dict:
+    try:
+        with open(_config_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_config(data: dict) -> None:
+    try:
+        with open(_config_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def get_target_lang() -> str:
+    lang = _read_config().get("target_lang", "EN")
+    return lang if lang in TARGET_LANGUAGES else "EN"
+
+
+def set_target_lang(lang_code: str) -> None:
+    if lang_code not in TARGET_LANGUAGES:
+        return
+    data = _read_config()
+    data["target_lang"] = lang_code
+    _write_config(data)
+
+
+def get_ui_lang() -> str:
+    lang = _read_config().get("ui_lang", "EN")
+    return lang if lang in UI_LANGUAGES else "EN"
+
+
+def set_ui_lang(lang_code: str) -> None:
+    if lang_code not in UI_LANGUAGES:
+        return
+    data = _read_config()
+    data["ui_lang"] = lang_code
+    _write_config(data)
+
+
+# --------------------------------------------------------------------------- input
+
 def _key_event(vk: int, up: bool = False) -> _INPUT:
     event = _INPUT()
     event.type = INPUT_KEYBOARD
@@ -99,7 +174,7 @@ def _key_event(vk: int, up: bool = False) -> _INPUT:
 
 
 def send_ctrl(vk: int) -> None:
-    """Ctrl+<vk> через SendInput: работает независимо от активной раскладки."""
+    """Ctrl+<vk> via SendInput: works regardless of active keyboard layout."""
     events = (_INPUT * 4)(
         _key_event(VK_CONTROL),
         _key_event(vk),
@@ -120,7 +195,7 @@ def _open_clipboard(retries: int = 10) -> bool:
 
 
 def clip_get_text() -> str | None:
-    """Текст из буфера обмена или None, если там нет текста (например, картинка)."""
+    """Text from clipboard or None if clipboard has no text."""
     if not _open_clipboard():
         return None
     try:
@@ -170,7 +245,7 @@ def get_cursor_pos() -> tuple[int, int]:
 
 
 def virtual_screen() -> tuple[int, int, int, int]:
-    """Границы всех мониторов: (left, top, width, height)."""
+    """Bounds across all monitors: (left, top, width, height)."""
     return (
         _u32.GetSystemMetrics(76),  # SM_XVIRTUALSCREEN
         _u32.GetSystemMetrics(77),  # SM_YVIRTUALSCREEN
@@ -184,7 +259,7 @@ def get_foreground_window() -> int:
 
 
 def focus_window(hwnd: int) -> bool:
-    """Поднимает окно на передний план, обходя foreground lock Windows."""
+    """Brings window to foreground, bypassing Windows foreground lock."""
     if not hwnd:
         return False
     try:
@@ -234,7 +309,7 @@ def _wait_for_copy(timeout: float) -> str | None:
 
 
 def capture_selection(timeout: float = 0.5) -> tuple[str, str | None]:
-    """Тихо копирует выделение через Ctrl+C. Возвращает (текст, старый буфер)."""
+    """Silently copies selection via Ctrl+C. Returns (text, previous_clipboard)."""
     previous = clip_get_text()
     clip_set_text(_PROBE)
     _wait_alt_released()
@@ -248,7 +323,7 @@ def capture_selection(timeout: float = 0.5) -> tuple[str, str | None]:
 
 
 def replace_selection(text: str, previous_clipboard: str | None, hwnd: int = 0) -> bool:
-    """Вставляет text вместо выделения и возвращает старый буфер обмена."""
+    """Pastes text over current selection and restores old clipboard."""
     if not text:
         return False
     if hwnd:
@@ -270,7 +345,7 @@ def has_cyrillic(text: str) -> bool:
 
 
 def _translate_direct(text: str, target: str) -> str:
-    """Резервный путь, если deep_translator упёрся в лимит Google."""
+    """Fallback path if deep_translator hits a Google rate limit."""
     import requests
 
     response = requests.get(
@@ -283,19 +358,36 @@ def _translate_direct(text: str, target: str) -> str:
     return "".join(part[0] for part in chunks if part and part[0]).strip()
 
 
-def translate_text(text: str) -> str:
+def translate_text(text: str, target_code: str = "EN") -> str:
+    """Translate from any auto-detected language into `target_code` (default: English)."""
     from deep_translator import GoogleTranslator
 
     source_text = (text or "").strip()
     if not source_text:
         return ""
-    target = "en" if has_cyrillic(source_text) else "ru"
+    target = TARGET_LANGUAGES.get(target_code, "en")
     source_text = source_text[:4900]
     try:
         result = GoogleTranslator(source="auto", target=target).translate(source_text)
     except Exception:
         result = _translate_direct(source_text, target)
     return (result or "").strip()
+
+
+# --------------------------------------------------------------------------- links
+
+def open_url(url: str) -> None:
+    try:
+        webbrowser.open(url, new=2)
+    except Exception:
+        pass
+
+
+def google_search(text: str) -> None:
+    query = (text or "").strip()
+    if not query:
+        return
+    open_url("https://www.google.com/search?q=" + quote(query))
 
 
 # --------------------------------------------------------------------------- keyboard layout
@@ -361,7 +453,7 @@ def _normalize_expr(expr: str) -> str:
 
 
 def calculate(expr: str) -> str | None:
-    """Результат арифметического примера или None, если это не пример."""
+    """Evaluates arithmetic expression or returns None if invalid."""
     source = _normalize_expr(expr)
     if not source or len(source) > 300:
         return None
@@ -378,15 +470,3 @@ def calculate(expr: str) -> str | None:
     if isinstance(value, float) and value.is_integer() and abs(value) < 1e16:
         return str(int(value))
     return f"{value:.12g}"
-
-
-# --------------------------------------------------------------------------- links
-
-def google_search(text: str) -> None:
-    query = " ".join((text or "").split())[:300]
-    if query:
-        webbrowser.open("https://www.google.com/search?q=" + quote(query))
-
-
-def open_url(url: str) -> None:
-    webbrowser.open(url)

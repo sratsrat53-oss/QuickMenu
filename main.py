@@ -1,4 +1,4 @@
-"""QuickMenu — меню действий по Alt+Q с иконкой в трее."""
+"""QuickMenu — Alt+Q action menu with a tray icon."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ _u32.PostThreadMessageW.argtypes = (wintypes.DWORD, wintypes.UINT, wintypes.WPAR
 
 
 class HotkeyListener(threading.Thread):
-    """Alt+Q через RegisterHotKey: не зависит от раскладки клавиатуры."""
+    """Alt+Q via RegisterHotKey: independent of the active keyboard layout."""
 
     def __init__(self, callback) -> None:
         super().__init__(name="QuickMenuHotkey", daemon=True)
@@ -86,15 +86,15 @@ class QuickMenuApp:
         self.hotkey.start()
         self.hotkey.ready.wait(2.0)
         if not self.hotkey.registered:
-            print("Не удалось зарегистрировать Alt+Q — возможно, её заняла другая программа")
+            print("Could not register Alt+Q — another program may already use it")
         self._start_tray()
         self.root.after(40, self._pump)
 
     def _start_tray(self) -> None:
         menu = pystray.Menu(
-            pystray.MenuItem("Открыть меню  (Alt+Q)", self._on_hotkey, default=True),
+            pystray.MenuItem("Open menu  (Alt+Q)", self._on_hotkey, default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Выход", self._tray_quit),
+            pystray.MenuItem("Exit", self._tray_quit),
         )
         self.tray = pystray.Icon("QuickMenu", _tray_image(), "QuickMenu — Alt+Q", menu)
         threading.Thread(target=self.tray.run, daemon=True).start()
@@ -102,7 +102,7 @@ class QuickMenuApp:
     # ------------------------------------------------------------------ hotkey
 
     def _on_hotkey(self, _icon=None, _item=None) -> None:
-        """Вызывается из потока hotkey / pystray, не из Tk."""
+        """Called from the hotkey / pystray thread, not from Tk."""
         if self._busy or self.popup is not None:
             return
         self._busy = True

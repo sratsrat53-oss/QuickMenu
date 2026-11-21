@@ -1,4 +1,4 @@
-"""Компактное всплывающее окно QuickMenu."""
+"""Compact QuickMenu popup window."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import customtkinter as ctk
 
 import actions
 
-BG_KEY = "#010203"  # ключ прозрачности для скруглённых углов
+BG_KEY = "#010203"  # transparency key for the rounded corners
 PANEL = "#171a21"
 FIELD = "#101218"
 HOVER = "#242834"
@@ -26,22 +26,67 @@ WIDTH = 430
 PREVIEW_H = 74
 RESULT_H = 92
 
+# Target languages offered in the popup; keys must exist in actions.TARGET_LANGUAGES.
+LANG_CHOICES = ("EN", "RU", "ES", "DE", "FR", "JA", "ZH", "UK", "PL", "TR")
+
+# Interface language: every user-visible string lives here.
+UI_STRINGS: dict[str, dict[str, str]] = {
+    "EN": {
+        "esc": "Esc to close",
+        "no_text": "No text selected — select a fragment and press Alt+Q",
+        "translate": "Translate",
+        "layout": "Fix Layout",
+        "calc": "Calculate",
+        "google": "Google Search",
+        "copy": "Copy",
+        "replace": "Replace in text",
+        "boosty": "Support on Boosty",
+        "translating": "Translating…",
+        "converting": "Converting layout…",
+        "calculating": "Calculating…",
+        "copied": "Copied",
+        "empty": "Empty response",
+        "no_connection": "No connection — could not get a response",
+        "rate_limit": "Google is rate limiting translations — please try again later",
+        "not_math": "This does not look like a math expression",
+    },
+    "RU": {
+        "esc": "Esc — закрыть",
+        "no_text": "Текст не выделен — выделите фрагмент и нажмите Alt+Q",
+        "translate": "Перевести",
+        "layout": "Раскладка",
+        "calc": "Посчитать",
+        "google": "В Google",
+        "copy": "Копировать",
+        "replace": "Заменить в тексте",
+        "boosty": "Поддержать на Boosty",
+        "translating": "Перевожу…",
+        "converting": "Меняю раскладку…",
+        "calculating": "Считаю…",
+        "copied": "Скопировано",
+        "empty": "Пустой ответ",
+        "no_connection": "Нет соединения — не удалось получить ответ",
+        "rate_limit": "Google временно ограничил перевод — попробуйте позже",
+        "not_math": "Не похоже на математический пример",
+    },
+}
+
 _u32 = ctypes.WinDLL("user32")
 
 
-def _error_text(exc: Exception) -> str:
+def _error_text(exc: Exception, t: dict[str, str]) -> str:
     name = type(exc).__name__
     message = str(exc).strip()
     lowered = message.lower()
     if any(word in name for word in ("Connection", "Timeout", "Proxy")) or "connect" in lowered:
-        return "Нет соединения — не удалось получить ответ"
+        return t["no_connection"]
     if "TooMany" in name:
-        return "Google временно ограничил перевод — попробуйте позже"
+        return t["rate_limit"]
     return message[:180] or name
 
 
 class PopupMenu:
-    """Одноразовое окно меню: живёт от показа до Esc / клика мимо."""
+    """Single-use menu window: lives from show until Esc / outside click."""
 
     def __init__(self, master, text, old_clipboard, target_hwnd, anchor, on_close):
         self.text = (text or "").strip()
@@ -54,8 +99,11 @@ class PopupMenu:
         self._closed = False
         self._pos: tuple[int, int] | None = None
         self._result = ""
-        self._action_text = ""
+        self._action_key = "copy"
         self._action_cb = None
+        self._status_key = ""
+        self.ui_lang = actions.get_ui_lang()
+        self._t = UI_STRINGS[self.ui_lang]
         self._shown_at = 0.0
         self._mouse_was_down = False
 
@@ -87,13 +135,30 @@ class PopupMenu:
         ctk.CTkLabel(
             head, text="QuickMenu", font=ctk.CTkFont("Segoe UI Semibold", 12), text_color=ACCENT
         ).pack(side="left")
-        ctk.CTkLabel(
-            head, text="Esc — закрыть", font=ctk.CTkFont("Segoe UI", 10), text_color=MUTED
-        ).pack(side="right")
+        self.esc_label = ctk.CTkLabel(
+            head, text=self._t["esc"], font=ctk.CTkFont("Segoe UI", 10), text_color=MUTED
+        )
+        self.esc_label.pack(side="right")
+        self.ui_switch = ctk.CTkSegmentedButton(
+            head,
+            values=list(UI_STRINGS),
+            command=self._on_ui_lang,
+            width=84,
+            height=22,
+            corner_radius=6,
+            selected_color="#2a3550",
+            selected_hover_color="#34426b",
+            unselected_color="#1f232e",
+            unselected_hover_color=HOVER,
+            text_color=FG,
+            font=ctk.CTkFont("Segoe UI", 10),
+        )
+        self.ui_switch.set(self.ui_lang)
+        self.ui_switch.pack(side="right", padx=(0, 10))
 
         preview = self.text[:700] + ("…" if len(self.text) > 700 else "")
         if not preview:
-            preview = "Текст не выделен — выделите фрагмент и нажмите Alt+Q"
+            preview = self._t["no_text"]
         self.preview = self._textbox(body, PREVIEW_H, MUTED if not self.text else FG)
         self._fill(self.preview, preview)
         self.preview.pack(fill="x")
@@ -103,18 +168,25 @@ class PopupMenu:
         for column in (0, 1):
             grid.grid_columnconfigure(column, weight=1, uniform="btn")
 
+        # Cell (0, 0) holds "Translate" plus a compact target-language picker.
+        translate_cell = ctk.CTkFrame(grid, fg_color="transparent")
+        translate_cell.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=3)
+        translate_cell.grid_columnconfigure(0, weight=1)
+
         self.buttons = []
-        for index, (label, command) in enumerate(
+        self.button_keys = ("translate", "layout", "calc", "google")
+        for index, (key, command) in enumerate(
             (
-                ("Перевести", self._translate),
-                ("Раскладка", self._layout),
-                ("Посчитать", self._calc),
-                ("В Google", self._google),
+                ("translate", self._translate),
+                ("layout", self._layout),
+                ("calc", self._calc),
+                ("google", self._google),
             )
         ):
+            first = index == 0
             button = ctk.CTkButton(
-                grid,
-                text=label,
+                translate_cell if first else grid,
+                text=self._t[key],
                 command=command,
                 height=32,
                 corner_radius=8,
@@ -125,13 +197,18 @@ class PopupMenu:
                 text_color=FG,
                 font=ctk.CTkFont("Segoe UI", 12),
             )
-            button.grid(
-                row=index // 2,
-                column=index % 2,
-                sticky="ew",
-                padx=(0, 6) if index % 2 == 0 else (6, 0),
-                pady=3,
-            )
+            if first:
+                button.grid(row=0, column=0, sticky="ew")
+                self.lang_menu = self._lang_menu(translate_cell)
+                self.lang_menu.grid(row=0, column=1, sticky="e", padx=(6, 0))
+            else:
+                button.grid(
+                    row=index // 2,
+                    column=index % 2,
+                    sticky="ew",
+                    padx=(0, 6) if index % 2 == 0 else (6, 0),
+                    pady=3,
+                )
             self.buttons.append(button)
         if not self.text:
             for button in self.buttons:
@@ -149,7 +226,7 @@ class PopupMenu:
         self.status.pack(side="left", fill="x", expand=True)
         self.action_btn = ctk.CTkButton(
             row,
-            text="Копировать",
+            text=self._t["copy"],
             command=self._run_action,
             width=150,
             height=30,
@@ -162,7 +239,7 @@ class PopupMenu:
 
         self.boosty = ctk.CTkButton(
             body,
-            text="Поддержать на Boosty",
+            text=self._t["boosty"],
             command=lambda: actions.open_url(actions.BOOSTY_URL),
             height=22,
             corner_radius=6,
@@ -196,6 +273,27 @@ class PopupMenu:
         if text:
             box.insert("1.0", text)
         box.configure(state="disabled")
+
+    def _lang_menu(self, parent) -> ctk.CTkOptionMenu:
+        menu = ctk.CTkOptionMenu(
+            parent,
+            values=list(LANG_CHOICES),
+            width=64,
+            height=32,
+            corner_radius=8,
+            fg_color="#1f232e",
+            button_color="#1f232e",
+            button_hover_color=HOVER,
+            dropdown_fg_color=PANEL,
+            dropdown_hover_color=HOVER,
+            text_color=FG,
+            command=self._on_lang_change,
+            font=ctk.CTkFont("Segoe UI", 12),
+            dropdown_font=ctk.CTkFont("Segoe UI", 12),
+            dynamic_resizing=False,
+        )
+        menu.set(actions.get_target_lang())
+        return menu
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -304,19 +402,42 @@ class PopupMenu:
 
     # ------------------------------------------------------------------ actions
 
+    def _on_ui_lang(self, value: str) -> None:
+        if value not in UI_STRINGS or value == self.ui_lang:
+            return
+        self.ui_lang = value
+        actions.set_ui_lang(value)
+        self._apply_language()
+
+    def _apply_language(self) -> None:
+        self._t = UI_STRINGS[self.ui_lang]
+        self.esc_label.configure(text=self._t["esc"])
+        self.boosty.configure(text=self._t["boosty"])
+        for key, button in zip(self.button_keys, self.buttons):
+            button.configure(text=self._t[key])
+        if not self.text:
+            self._fill(self.preview, self._t["no_text"])
+        self.action_btn.configure(text=self._t[self._action_key])
+        if self._status_key:
+            self.status.configure(text=self._t[self._status_key])
+        self._resize()
+
+    def _on_lang_change(self, value: str) -> None:
+        actions.set_target_lang(value)
+
     def _translate(self) -> None:
         if not self.text:
             return
-        self._start(lambda: actions.translate_text(self.text), "Перевожу…", "Копировать", self._copy)
+        lang = self.lang_menu.get()
+        self._start(
+            lambda: actions.translate_text(self.text, lang), "translating", "copy", self._copy
+        )
 
     def _layout(self) -> None:
         if not self.text:
             return
         self._start(
-            lambda: actions.convert_layout(self.text),
-            "Меняю раскладку…",
-            "Заменить в тексте",
-            self._replace,
+            lambda: actions.convert_layout(self.text), "converting", "replace", self._replace
         )
 
     def _calc(self) -> None:
@@ -326,10 +447,10 @@ class PopupMenu:
         def work() -> str:
             value = actions.calculate(self.text)
             if value is None:
-                raise ValueError("Не похоже на математический пример")
+                raise ValueError(self._t["not_math"])
             return value
 
-        self._start(work, "Считаю…", "Копировать", self._copy)
+        self._start(work, "calculating", "copy", self._copy)
 
     def _google(self) -> None:
         if not self.text:
@@ -337,13 +458,14 @@ class PopupMenu:
         actions.google_search(self.text)
         self.close()
 
-    def _start(self, worker, label: str, action_text: str, action_cb) -> None:
+    def _start(self, worker, status_key: str, action_key: str, action_cb) -> None:
         self._result = ""
-        self._action_text = action_text
+        self._action_key = action_key
+        self._status_key = ""
         self._action_cb = action_cb
         if not self.result_box.winfo_manager():
             self.result_box.pack(fill="x")
-        self._fill(self.res_text, label)
+        self._fill(self.res_text, self._t[status_key])
         self.status.configure(text="", text_color=MUTED)
         self.action_btn.pack_forget()
         self._resize()
@@ -352,8 +474,8 @@ class PopupMenu:
     def _worker(self, fn) -> None:
         try:
             self.results.put((True, fn()))
-        except Exception as exc:  # noqa: BLE001 - ошибку показываем в окне
-            self.results.put((False, _error_text(exc)))
+        except Exception as exc:  # noqa: BLE001 - the error is shown in the popup
+            self.results.put((False, _error_text(exc, self._t)))
 
     def _drain(self) -> None:
         if self._closed:
@@ -373,11 +495,11 @@ class PopupMenu:
         if ok and text:
             self._result = text
             self._fill(self.res_text, text)
-            self.action_btn.configure(text=self._action_text)
+            self.action_btn.configure(text=self._t[self._action_key])
             self.action_btn.pack(side="right")
         else:
             self._result = ""
-            self._fill(self.res_text, text or "Пустой ответ")
+            self._fill(self.res_text, text or self._t["empty"])
             self.action_btn.pack_forget()
         self._resize()
 
@@ -390,8 +512,9 @@ class PopupMenu:
         if not self._result:
             return
         actions.clip_set_text(self._result)
-        self.status.configure(text="Скопировано", text_color=SUCCESS)
-        self.action_btn.configure(text="Скопировано")
+        self._status_key = "copied"
+        self.status.configure(text=self._t["copied"], text_color=SUCCESS)
+        self.action_btn.configure(text=self._t["copied"])
         self.win.after(650, self.close)
 
     def _replace(self) -> None:

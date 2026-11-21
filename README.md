@@ -1,44 +1,45 @@
-# ⚡ QuickMenu
+# QuickMenu
 
-**QuickMenu** is a lightweight, fast Windows utility designed to speed up your daily workflow and eliminate unnecessary window switching.
+Всплывающее меню действий по **Alt+Q** для Windows: выделили текст → нажали Alt+Q → рядом с курсором появилось меню.
 
-Simply select any text anywhere on your screen and press **`Alt + Q`** — a clean, compact action menu will appear right next to your cursor. Once you pick an action, click away, or press `Esc`, it smoothly hides back into the system tray.
-
----
-
-### ✨ Key Features
-
-* 🌐 **Instant Translation (EN ↔ RU)** — Translates selected text directly inside the popup window with one-click copy support. Includes automatic fallback if the primary translation service hits a rate limit.
-* ⌨️ **Keyboard Layout Fixer (`Ghbdtn` → `Привет`)** — Accidentally typed a whole sentence in the wrong keyboard layout? Select it, click **"Replace in text"**, and QuickMenu automatically converts and retypes it in place.
-* 🧮 **Quick Math Evaluator** — Evaluates arithmetic expressions directly from highlighted text (supports parentheses, percentages, and basic operations).
-* 🔍 **Instant Google Search** — Opens a Google search for the selected phrase in your default browser.
-* 🪶 **Zero Clutter** — Runs silently in the background via the system tray without taking up taskbar space.
-
----
-
-### 🚀 Download & Run (No Python Required)
-
-1. Go to the **[Releases](../../releases)** section on the right.
-2. Download **`QuickMenu.exe`** and launch it (a lightning icon will appear in your system tray).
-3. Highlight any text and press **`Alt + Q`**.
-
-*(To exit the app, right-click the lightning icon in the system tray → **Exit**).*
-
----
-
-### 🛠️ Run from Source
-
-If you prefer running from Python or customizing the code:
+## Установка и запуск
 
 ```bash
 pip install -r requirements.txt
 pythonw main.py
 ```
 
----
+`pythonw` запускает без консольного окна; при отладке используйте `python main.py`.
 
-### ☕ Support the Project
+## Что умеет
 
-If QuickMenu saves you time every day, consider supporting its development and future updates:
+- **Перевести** — RU ↔ EN через `deep_translator` (Google), результат в этом же окне + кнопка «Копировать».
+  Если Google отвечает лимитом, автоматически используется резервный endpoint; без сети показывается понятная ошибка.
+- **Раскладка** — QWERTY ↔ ЙЦУКЕН в обе стороны, кнопка «Заменить в тексте» вставляет результат вместо выделения.
+- **Посчитать** — безопасный разбор арифметики (`ast`), поддержка `+ - * / // % **`, скобок, `,` как десятичного разделителя, `× ÷ − ^`.
+- **В Google** — поиск выделенного текста в браузере.
+- **Поддержать на Boosty** — открывает https://boosty.to/stratapak/donate (константа `actions.BOOSTY_URL`).
 
-👉 **[Support on Boosty](https://boosty.to)**
+Окно закрывается по `Esc`, клику мимо или потере фокуса; после «Копировать» оно само закрывается через 0.65 с.
+
+## Файлы
+
+| Файл | Назначение |
+| --- | --- |
+| `main.py` | трей-иконка, глобальная горячая клавиша (`RegisterHotKey`), очередь событий в Tk |
+| `actions.py` | буфер обмена через WinAPI, Ctrl+C/Ctrl+V, перевод, раскладка, калькулятор, ссылки |
+| `popup_ui.py` | окно на customtkinter: превью, кнопки, результат, закрытие |
+
+## Как это устроено
+
+- Горячая клавиша регистрируется через `RegisterHotKey(MOD_ALT, VK_Q)`, а не по символу, поэтому работает при любой раскладке (в т.ч. русской).
+- Выделение копируется через `SendInput` с виртуальными кодами (`Ctrl+C`), старый текст буфера сохраняется и возвращается.
+- «Заменить в тексте» поднимает исходное окно (`SetForegroundWindow` с обходом foreground lock), вставляет текст через `Ctrl+V` и восстанавливает буфер.
+- Окно без рамок, `topmost`, со скруглёнными углами (`-transparentcolor`), позиционируется у курсора и прижимается к краям экрана.
+
+## Ограничения
+
+- Восстанавливается только **текстовый** буфер обмена: если там было изображение или файлы, они будут потеряны (ограничение WinAPI-обмена текстом).
+- Глобальные хуки/горячие клавиши не срабатывают поверх окон, запущенных **от администратора**, если QuickMenu запущен без прав администратора. Запустите её от администратора, если нужно работать в таких окнах.
+- Google может ограничивать частые запросы перевода с одного IP — тогда показывается сообщение об ошибке.
+- Проверено на Windows 11, Python 3.13.
