@@ -161,6 +161,8 @@ class PopupMenu:
         self._t = UI_STRINGS[self.ui_lang]
         self._shown_at = 0.0
         self._mouse_was_down = False
+        self._drag: tuple[int, int] | None = None
+        self._moved = False
 
         self.win = tk.Toplevel(master)
         self.win.withdraw()
@@ -187,9 +189,10 @@ class PopupMenu:
 
         head = ctk.CTkFrame(body, fg_color="transparent")
         head.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(
+        self.title_label = ctk.CTkLabel(
             head, text="QuickMenu", font=ctk.CTkFont("Segoe UI Semibold", 12), text_color=ACCENT
-        ).pack(side="left")
+        )
+        self.title_label.pack(side="left")
         self.settings_btn = ctk.CTkButton(
             head,
             text="⚙",
@@ -207,6 +210,11 @@ class PopupMenu:
             head, text=self._t["esc"], font=ctk.CTkFont("Segoe UI", 10), text_color=MUTED
         )
         self.esc_label.pack(side="right")
+        # The whole header strip is a drag handle.
+        for widget in (head, self.title_label, self.esc_label):
+            widget.bind("<Button-1>", self._drag_start)
+            widget.bind("<B1-Motion>", self._drag_move)
+            widget.bind("<ButtonRelease-1>", self._drag_end)
 
         preview = self.text[:700] + ("…" if len(self.text) > 700 else "")
         if not preview:
@@ -399,18 +407,41 @@ class PopupMenu:
         self.win.update_idletasks()
         width = max(WIDTH, self.panel.winfo_reqwidth() + 2)
         height = self.panel.winfo_reqheight()
-        left, top, screen_w, screen_h = actions.virtual_screen()
         if initial or self._pos is None:
+            # Place next to the cursor, inside the work area of the monitor it is on.
             ax, ay = self.anchor
-            x = min(max(left + 8, ax + 12), left + screen_w - width - 8)
+            left, top, right, bottom = actions.monitor_work_area(ax, ay)
+            x = min(max(left + 8, ax + 12), right - width - 8)
             y = ay + 20
-            if y + height > top + screen_h - 56:
+            if y + height > bottom - 8:
                 y = max(top + 8, ay - height - 20)
             self._pos = (x, y)
         x, y = self._pos
-        x = max(left + 8, min(x, left + screen_w - width - 8))
-        y = max(top + 8, min(y, top + screen_h - height - 56))
+        if self._moved:
+            # The user dragged the window: allow any monitor, just keep it on the desktop.
+            v_left, v_top, v_w, v_h = actions.virtual_screen()
+            left, top, right, bottom = v_left, v_top, v_left + v_w, v_top + v_h
+        else:
+            left, top, right, bottom = actions.monitor_work_area(x + width // 2, y + 20)
+        x = max(left + 8, min(x, right - width - 8))
+        y = max(top + 8, min(y, bottom - height - 8))
+        self._pos = (x, y)
         self.win.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+
+    def _drag_start(self, event) -> None:
+        self._drag = (event.x_root - self.win.winfo_x(), event.y_root - self.win.winfo_y())
+
+    def _drag_move(self, event) -> None:
+        if self._drag is None or self._closed:
+            return
+        x = event.x_root - self._drag[0]
+        y = event.y_root - self._drag[1]
+        self._pos = (x, y)
+        self._moved = True
+        self.win.geometry(f"+{int(x)}+{int(y)}")
+
+    def _drag_end(self, _event=None) -> None:
+        self._drag = None
 
     def _resize(self) -> None:
         if not self._closed:
