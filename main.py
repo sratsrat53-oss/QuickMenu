@@ -116,6 +116,28 @@ class HotkeyListener(threading.Thread):
             _u32.PostThreadMessageW(self.thread_id, WM_QUIT, 0, 0)
 
 
+ERROR_ALREADY_EXISTS = 183
+_MUTEX_NAME = "Local\\QuickMenu_SingleInstance"
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+_k32.CreateMutexW.restype = wintypes.HANDLE
+_instance_mutex = None  # kept alive for the whole process lifetime
+
+
+def _acquire_single_instance() -> bool:
+    """True if this is the only running copy; False if another one already holds the mutex."""
+    global _instance_mutex
+    ctypes.set_last_error(0)
+    handle = _k32.CreateMutexW(None, False, _MUTEX_NAME)
+    if not handle:
+        return True  # could not create the mutex — do not block startup
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        _k32.CloseHandle(handle)
+        return False
+    _instance_mutex = handle
+    return True
+
+
 def _tray_image(size: int = 64) -> Image.Image:
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -160,7 +182,16 @@ class QuickMenuApp:
             pystray.MenuItem(lambda _item: self._tray_label("tray_exit"), self._tray_quit),
         )
         self.tray = pystray.Icon("QuickMenu", _tray_image(), "QuickMenu", menu)
-        threading.Thread(target=self.tray.run, daemon=True).start()
+        threading.Thread(target=self.tray.run, kwargs={"setup": self._on_tray_ready}, daemon=True).start()
+
+    def _on_tray_ready(self, icon: pystray.Icon) -> None:
+        """Runs in pystray's thread once the icon exists: show it and announce startup."""
+        icon.visible = True
+        strings = UI_STRINGS[actions.get_ui_lang()]
+        try:
+            icon.notify(strings["started"].format(hotkey=actions.get_hotkey()), "QuickMenu")
+        except Exception:
+            pass
 
     def _refresh_tray(self) -> None:
         if self.tray is None:
@@ -269,6 +300,9 @@ class QuickMenuApp:
 
 
 def main() -> int:
+    if not _acquire_single_instance():
+        print("QuickMenu is already running")
+        return 0
     app = QuickMenuApp()
     try:
         app.run()

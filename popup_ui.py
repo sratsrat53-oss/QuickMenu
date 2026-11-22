@@ -52,6 +52,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "tray_open": "Open menu",
         "tray_settings": "Settings…",
         "tray_exit": "Exit",
+        "started": "QuickMenu is running — select text and press {hotkey}",
     },
     "RU": {
         "esc": "Esc — закрыть",
@@ -74,6 +75,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "tray_open": "Открыть меню",
         "tray_settings": "Настройки…",
         "tray_exit": "Выход",
+        "started": "QuickMenu запущена — выделите текст и нажмите {hotkey}",
     },
 }
 
@@ -132,7 +134,7 @@ def _error_text(exc: Exception, t: dict[str, str]) -> str:
     lowered = message.lower()
     if any(word in name for word in ("Connection", "Timeout", "Proxy")) or "connect" in lowered:
         return t["no_connection"]
-    if "TooMany" in name:
+    if "TooMany" in name or "429" in message:
         return t["rate_limit"]
     return message[:180] or name
 

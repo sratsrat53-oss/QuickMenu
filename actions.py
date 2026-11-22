@@ -41,7 +41,6 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 MOD_NOREPEAT = 0x4000
 
-# Display order of modifier names in a hotkey string.
 MODIFIER_ORDER = (
     ("Ctrl", MOD_CONTROL),
     ("Alt", MOD_ALT),
@@ -101,6 +100,17 @@ VK_RWIN = 0x5C
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
 
+MONITOR_DEFAULTTONEAREST = 2
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
 
 class _MOUSEINPUT(ctypes.Structure):
     _fields_ = [
@@ -140,6 +150,10 @@ class _INPUT(ctypes.Structure):
 
 
 _u32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
+_u32.MonitorFromPoint.argtypes = (wintypes.POINT, wintypes.DWORD)
+_u32.MonitorFromPoint.restype = wintypes.HMONITOR
+_u32.GetMonitorInfoW.argtypes = (wintypes.HMONITOR, ctypes.POINTER(_MONITORINFO))
+_u32.GetMonitorInfoW.restype = wintypes.BOOL
 
 _u32.GetClipboardData.restype = wintypes.HANDLE
 _u32.SetClipboardData.argtypes = (wintypes.UINT, wintypes.HANDLE)
@@ -371,11 +385,25 @@ def get_cursor_pos() -> tuple[int, int]:
 def virtual_screen() -> tuple[int, int, int, int]:
     """Bounds across all monitors: (left, top, width, height)."""
     return (
-        _u32.GetSystemMetrics(76),  # SM_XVIRTUALSCREEN
-        _u32.GetSystemMetrics(77),  # SM_YVIRTUALSCREEN
-        _u32.GetSystemMetrics(78),  # SM_CXVIRTUALSCREEN
-        _u32.GetSystemMetrics(79),  # SM_CYVIRTUALSCREEN
+        _u32.GetSystemMetrics(76),
+        _u32.GetSystemMetrics(77),
+        _u32.GetSystemMetrics(78),
+        _u32.GetSystemMetrics(79),
     )
+
+
+def monitor_work_area(x: int, y: int) -> tuple[int, int, int, int]:
+    """Work area of the monitor containing (x, y): (left, top, right, bottom)."""
+    pt = wintypes.POINT(int(x), int(y))
+    hmon = _u32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+    if hmon:
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if _u32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+            r = info.rcWork
+            return int(r.left), int(r.top), int(r.right), int(r.bottom)
+    left, top, w, h = virtual_screen()
+    return left, top, left + w, top + h
 
 
 def get_foreground_window() -> int:
@@ -410,16 +438,16 @@ def focus_window(hwnd: int) -> bool:
 
 # --------------------------------------------------------------------------- selection
 
+def alt_pressed() -> bool:
+    return bool(_u32.GetAsyncKeyState(0x12) & 0x8000)
+
+
 def _wait_alt_released(timeout: float = 0.6) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not alt_pressed():
             return
         time.sleep(0.01)
-
-
-def alt_pressed() -> bool:
-    return bool(_u32.GetAsyncKeyState(0x12) & 0x8000)  # VK_MENU
 
 
 def _wait_for_copy(timeout: float) -> str | None:
@@ -468,6 +496,21 @@ def has_cyrillic(text: str) -> bool:
     return bool(_CYRILLIC.search(text))
 
 
+def _translate_mymemory(text: str, target: str) -> str:
+    """Secondary free translator fallback when Google rate-limits (HTTP 429)."""
+    import requests
+
+    lang_pair = f"{'ru' if has_cyrillic(text) else 'en'}|{target}"
+    response = requests.get(
+        "https://api.mymemory.translated.net/get",
+        params={"q": text[:500], "langpair": lang_pair},
+        timeout=15,
+    )
+    response.raise_for_status()
+    translated = (response.json().get("responseData") or {}).get("translatedText") or ""
+    return translated.strip()
+
+
 def _translate_direct(text: str, target: str) -> str:
     """Fallback path if deep_translator hits a Google rate limit."""
     import requests
@@ -483,7 +526,7 @@ def _translate_direct(text: str, target: str) -> str:
 
 
 def translate_text(text: str, target_code: str = "EN") -> str:
-    """Translate from any auto-detected language into `target_code` (default: English)."""
+    """Translate from any auto-detected language into target_code (default: English)."""
     from deep_translator import GoogleTranslator
 
     source_text = (text or "").strip()
@@ -491,55 +534,34 @@ def translate_text(text: str, target_code: str = "EN") -> str:
         return ""
     target = TARGET_LANGUAGES.get(target_code, "en")
     source_text = source_text[:4900]
-    try:
-        result = GoogleTranslator(source="auto", target=target).translate(source_text)
-    except Exception:
-        result = _translate_direct(source_text, target)
-    return (result or "").strip()
-
-
-# --------------------------------------------------------------------------- links
-
-def open_url(url: str) -> None:
-    try:
-        webbrowser.open(url, new=2)
-    except Exception:
-        pass
-
-
-def google_search(text: str) -> None:
-    query = (text or "").strip()
-    if not query:
-        return
-    open_url("https://www.google.com/search?q=" + quote(query))
+    last_exc: Exception = RuntimeError("Translation failed")
+    for engine in (
+        lambda: GoogleTranslator(source="auto", target=target).translate(source_text),
+        lambda: _translate_direct(source_text, target),
+        lambda: _translate_mymemory(source_text, target),
+    ):
+        try:
+            result = (engine() or "").strip()
+            if result:
+                return result
+        except Exception as exc:
+            last_exc = exc
+    raise last_exc
 
 
 # --------------------------------------------------------------------------- keyboard layout
 
-_EN_KEYS = "qwertyuiop[]asdfghjkl;'zxcvbnm,./`"
-_RU_KEYS = "йцукенгшщзхъфывапролджэячсмитьбю.ё"
-_SHIFT_EN_RU = {"{": "Х", "}": "Ъ", ":": "Ж", '"': "Э", "<": "Б", ">": "Ю", "~": "Ё"}
+_EN_KEYS = "qwertyuiop[]asdfghjkl;'zxcvbnm,./`" + 'QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>?~' + '@#$^&'
+_RU_KEYS = "йцукенгшщзхъфывапролджэячсмитьбю.ё" + "ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,Ё" + '"№;:?'
 
-
-def _build_layout_tables() -> tuple[dict[str, str], dict[str, str]]:
-    en_to_ru: dict[str, str] = {}
-    for en, ru in zip(_EN_KEYS, _RU_KEYS):
-        en_to_ru[en] = ru
-        if en.isalpha():
-            en_to_ru[en.upper()] = ru.upper()
-    en_to_ru.update(_SHIFT_EN_RU)
-    ru_to_en = {ru: en for en, ru in en_to_ru.items()}
-    return en_to_ru, ru_to_en
-
-
-_EN_TO_RU, _RU_TO_EN = _build_layout_tables()
+_EN_TO_RU = dict(zip(_EN_KEYS, _RU_KEYS))
+_RU_TO_EN = dict(zip(_RU_KEYS, _EN_KEYS))
 
 
 def convert_layout(text: str) -> str:
-    if not text:
-        return ""
+    """QWERTY <-> ЙЦУКЕН; direction is chosen by whether the text has Cyrillic."""
     table = _RU_TO_EN if has_cyrillic(text) else _EN_TO_RU
-    return text.translate(str.maketrans(table))
+    return "".join(table.get(char, char) for char in text)
 
 
 # --------------------------------------------------------------------------- calculator
@@ -554,43 +576,70 @@ _BIN_OPS = {
     ast.Pow: operator.pow,
 }
 _UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+_MAX_POWER = 10_000
 
 
-def _eval_node(node: ast.AST) -> float:
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+def _eval_node(node: ast.AST):
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+            and not isinstance(node.value, bool):
         return node.value
-    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
-        left, right = _eval_node(node.left), _eval_node(node.right)
-        if isinstance(node.op, ast.Pow) and abs(right) > 100:
-            raise ValueError("power too large")
-        return _BIN_OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
         return _UNARY_OPS[type(node.op)](_eval_node(node.operand))
+    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
+        left = _eval_node(node.left)
+        right = _eval_node(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > _MAX_POWER:
+            raise ValueError("exponent too large")
+        return _BIN_OPS[type(node.op)](left, right)
     raise ValueError("unsupported expression")
 
 
-def _normalize_expr(expr: str) -> str:
-    text = (expr or "").split("=")[0].strip()
-    for src, dst in (("×", "*"), ("÷", "/"), ("−", "-"), ("^", "**"), (",", ".")):
-        text = text.replace(src, dst)
-    return text.strip()
+def _format_number(value) -> str:
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("bad result")
+        if value.is_integer() and abs(value) < 1e15:
+            return str(int(value))
+        return f"{value:.12g}"
+    return str(value)
 
 
-def calculate(expr: str) -> str | None:
-    """Evaluates arithmetic expression or returns None if invalid."""
-    source = _normalize_expr(expr)
-    if not source or len(source) > 300:
+def calculate(text: str) -> str | None:
+    """Safely evaluates an arithmetic expression; None if it is not math."""
+    expr = (text or "").strip()
+    expr = (
+        expr.replace("×", "*")
+        .replace("÷", "/")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("^", "**")
+        .replace(",", ".")
+        .replace("\u00a0", " ")
+    )
+    expr = expr.rstrip("= ").strip()
+    if not expr or not re.search(r"\d", expr):
         return None
-    if not re.fullmatch(r"[0-9eE+\-*/().%\s]+", source):
+    if not re.fullmatch(r"[\d\s+\-*/%().]+", expr):
         return None
     try:
-        value = _eval_node(ast.parse(source, mode="eval").body)
+        tree = ast.parse(expr, mode="eval")
+        return _format_number(_eval_node(tree))
+    except (SyntaxError, ValueError, ZeroDivisionError, OverflowError, RecursionError):
+        return None
+
+
+# --------------------------------------------------------------------------- links
+
+def open_url(url: str) -> None:
+    try:
+        webbrowser.open(url, new=2)
     except Exception:
-        return None
-    if isinstance(value, complex):
-        return None
-    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
-        return None
-    if isinstance(value, float) and value.is_integer() and abs(value) < 1e16:
-        return str(int(value))
-    return f"{value:.12g}"
+        pass
+
+
+def google_search(text: str) -> None:
+    query = " ".join((text or "").split())[:300]
+    if query:
+        open_url("https://www.google.com/search?q=" + quote(query))
