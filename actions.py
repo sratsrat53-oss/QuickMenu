@@ -33,6 +33,59 @@ TARGET_LANGUAGES: dict[str, str] = {
 
 UI_LANGUAGES: dict[str, str] = {"EN": "en", "RU": "ru"}
 
+DEFAULT_HOTKEY = "Alt+Q"
+
+MOD_ALT = 0x0001
+MOD_CONTROL = 0x0002
+MOD_SHIFT = 0x0004
+MOD_WIN = 0x0008
+MOD_NOREPEAT = 0x4000
+
+# Display order of modifier names in a hotkey string.
+MODIFIER_ORDER = (
+    ("Ctrl", MOD_CONTROL),
+    ("Alt", MOD_ALT),
+    ("Shift", MOD_SHIFT),
+    ("Win", MOD_WIN),
+)
+
+_MODIFIER_FLAGS = {
+    "ctrl": MOD_CONTROL,
+    "control": MOD_CONTROL,
+    "alt": MOD_ALT,
+    "shift": MOD_SHIFT,
+    "win": MOD_WIN,
+    "super": MOD_WIN,
+}
+
+_VK_NAMES = {
+    0x08: "Backspace",
+    0x09: "Tab",
+    0x0D: "Enter",
+    0x13: "Pause",
+    0x1B: "Esc",
+    0x20: "Space",
+    0x21: "PageUp",
+    0x22: "PageDown",
+    0x23: "End",
+    0x24: "Home",
+    0x25: "Left",
+    0x26: "Up",
+    0x27: "Right",
+    0x28: "Down",
+    0x2C: "PrintScreen",
+    0x2D: "Insert",
+    0x2E: "Delete",
+}
+for _index in range(24):
+    _VK_NAMES[0x70 + _index] = f"F{_index + 1}"
+for _index in range(10):
+    _VK_NAMES[0x60 + _index] = f"Num{_index}"
+
+_VK_FROM_NAME = {name.lower(): vk for vk, name in _VK_NAMES.items()}
+_VK_FROM_NAME["escape"] = 0x1B
+_VK_FROM_NAME["return"] = 0x0D
+
 _u32 = ctypes.WinDLL("user32", use_last_error=True)
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -40,7 +93,11 @@ CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
 SW_RESTORE = 9
 VK_LBUTTON = 0x01
+VK_SHIFT = 0x10
 VK_CONTROL = 0x11
+VK_MENU = 0x12
+VK_LWIN = 0x5B
+VK_RWIN = 0x5C
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
 
@@ -161,6 +218,72 @@ def set_ui_lang(lang_code: str) -> None:
     data = _read_config()
     data["ui_lang"] = lang_code
     _write_config(data)
+
+
+def vk_name(vk: int) -> str:
+    if 0x41 <= vk <= 0x5A or 0x30 <= vk <= 0x39:
+        return chr(vk)
+    return _VK_NAMES.get(vk, f"0x{vk:02X}")
+
+
+def vk_from_name(name: str) -> int | None:
+    key = str(name or "").strip()
+    if len(key) == 1:
+        char = key.upper()
+        if "A" <= char <= "Z" or "0" <= char <= "9":
+            return ord(char)
+    return _VK_FROM_NAME.get(key.lower())
+
+
+def format_hotkey(mods: int, vk: int) -> str:
+    parts = [name for name, flag in MODIFIER_ORDER if mods & flag]
+    parts.append(vk_name(vk))
+    return "+".join(parts)
+
+
+def parse_hotkey(combo: str) -> tuple[int, int] | None:
+    """'Ctrl+Shift+Q' -> (modifier flags, virtual-key code); None if unusable."""
+    parts = [part.strip() for part in str(combo or "").split("+") if part.strip()]
+    if len(parts) < 2:
+        return None
+    mods = 0
+    for part in parts[:-1]:
+        flag = _MODIFIER_FLAGS.get(part.lower())
+        if flag is None:
+            return None
+        mods |= flag
+    key = vk_from_name(parts[-1])
+    if not mods or key is None:
+        return None
+    return mods, key
+
+
+def get_hotkey() -> str:
+    parsed = parse_hotkey(_read_config().get("hotkey", DEFAULT_HOTKEY))
+    return format_hotkey(*parsed) if parsed else DEFAULT_HOTKEY
+
+
+def set_hotkey(combo: str) -> None:
+    parsed = parse_hotkey(combo)
+    if not parsed:
+        return
+    data = _read_config()
+    data["hotkey"] = format_hotkey(*parsed)
+    _write_config(data)
+
+
+def held_modifiers() -> int:
+    """Modifiers physically held right now (Win included, which Tk does not report)."""
+    mods = 0
+    if _u32.GetAsyncKeyState(VK_MENU) & 0x8000:
+        mods |= MOD_ALT
+    if _u32.GetAsyncKeyState(VK_CONTROL) & 0x8000:
+        mods |= MOD_CONTROL
+    if _u32.GetAsyncKeyState(VK_SHIFT) & 0x8000:
+        mods |= MOD_SHIFT
+    if (_u32.GetAsyncKeyState(VK_LWIN) | _u32.GetAsyncKeyState(VK_RWIN)) & 0x8000:
+        mods |= MOD_WIN
+    return mods
 
 
 # --------------------------------------------------------------------------- input

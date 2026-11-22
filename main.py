@@ -14,13 +14,14 @@ import pystray
 from PIL import Image, ImageDraw
 
 import actions
-from popup_ui import PopupMenu
+from popup_ui import PopupMenu, SettingsWindow, UI_STRINGS
 
 HOTKEY_ID = 1
-MOD_ALT = 0x0001
-VK_Q = 0x51
 WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
+WM_APP = 0x8000
+WM_HOTKEY_CHANGE = WM_APP + 1
+PM_NOREMOVE = 0x0000
 
 _u32 = ctypes.WinDLL("user32", use_last_error=True)
 _u32.RegisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT)
@@ -28,33 +29,87 @@ _u32.RegisterHotKey.restype = wintypes.BOOL
 _u32.UnregisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int)
 _u32.GetMessageW.argtypes = (ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT)
 _u32.GetMessageW.restype = ctypes.c_int
+_u32.PeekMessageW.argtypes = (
+    ctypes.POINTER(wintypes.MSG),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.UINT,
+    wintypes.UINT,
+)
 _u32.PostThreadMessageW.argtypes = (wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 
 
 class HotkeyListener(threading.Thread):
-    """Alt+Q via RegisterHotKey: independent of the active keyboard layout."""
+    """Global hotkey via RegisterHotKey: independent of the active keyboard layout.
 
-    def __init__(self, callback) -> None:
+    Registration happens on this thread, so ``set_combo`` / ``release`` are
+    marshalled to it and the new combination is live without a restart.
+    """
+
+    def __init__(self, callback, combo: str) -> None:
         super().__init__(name="QuickMenuHotkey", daemon=True)
         self.callback = callback
+        self.combo = combo
         self.thread_id = 0
         self.registered = False
         self.ready = threading.Event()
+        self._requests: queue.Queue = queue.Queue()
 
     def run(self) -> None:
         self.thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
-        self.registered = bool(_u32.RegisterHotKey(None, HOTKEY_ID, MOD_ALT, VK_Q))
-        self.ready.set()
-        if not self.registered:
-            return
         message = wintypes.MSG()
+        _u32.PeekMessageW(ctypes.byref(message), None, 0, 0, PM_NOREMOVE)
+        parsed = actions.parse_hotkey(self.combo)
+        if parsed:
+            self.registered = self._register(*parsed)
+        self.ready.set()
         while _u32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
             if message.message == WM_HOTKEY and message.wParam == HOTKEY_ID:
                 try:
                     self.callback()
                 except Exception:
                     traceback.print_exc()
+            elif message.message == WM_HOTKEY_CHANGE:
+                self._process_requests()
         _u32.UnregisterHotKey(None, HOTKEY_ID)
+
+    @staticmethod
+    def _register(mods: int, vk: int) -> bool:
+        return bool(_u32.RegisterHotKey(None, HOTKEY_ID, mods | actions.MOD_NOREPEAT, vk))
+
+    def _process_requests(self) -> None:
+        while True:
+            try:
+                mods, vk, event, result = self._requests.get_nowait()
+            except queue.Empty:
+                return
+            _u32.UnregisterHotKey(None, HOTKEY_ID)
+            self.registered = bool(mods and vk and self._register(mods, vk))
+            result["ok"] = self.registered
+            event.set()
+
+    def _request(self, mods: int, vk: int, timeout: float = 2.0) -> bool:
+        if not self.thread_id or not self.is_alive():
+            return False
+        event = threading.Event()
+        result: dict[str, bool] = {}
+        self._requests.put((mods, vk, event, result))
+        if not _u32.PostThreadMessageW(self.thread_id, WM_HOTKEY_CHANGE, 0, 0):
+            return False
+        event.wait(timeout)
+        return bool(result.get("ok"))
+
+    def set_combo(self, combo: str) -> bool:
+        parsed = actions.parse_hotkey(combo)
+        if not parsed:
+            return False
+        ok = self._request(*parsed)
+        if ok:
+            self.combo = combo
+        return ok
+
+    def release(self) -> None:
+        self._request(0, 0, timeout=1.0)
 
     def stop(self) -> None:
         if self.thread_id:
@@ -80,30 +135,46 @@ class QuickMenuApp:
         self.root.title("QuickMenu")
         self.queue: queue.Queue = queue.Queue()
         self.popup: PopupMenu | None = None
+        self.settings: SettingsWindow | None = None
         self.tray: pystray.Icon | None = None
         self._busy = False
-        self.hotkey = HotkeyListener(self._on_hotkey)
+        self.hotkey = HotkeyListener(self._on_hotkey, actions.get_hotkey())
         self.hotkey.start()
         self.hotkey.ready.wait(2.0)
         if not self.hotkey.registered:
-            print("Could not register Alt+Q — another program may already use it")
+            print(f"Could not register {actions.get_hotkey()} — another program may already use it")
         self._start_tray()
         self.root.after(40, self._pump)
 
+    def _tray_label(self, key: str) -> str:
+        strings = UI_STRINGS[actions.get_ui_lang()]
+        if key == "open":
+            return f'{strings["tray_open"]}  ({actions.get_hotkey()})'
+        return strings[key]
+
     def _start_tray(self) -> None:
         menu = pystray.Menu(
-            pystray.MenuItem("Open menu  (Alt+Q)", self._on_hotkey, default=True),
+            pystray.MenuItem(lambda _item: self._tray_label("open"), self._on_hotkey, default=True),
+            pystray.MenuItem(lambda _item: self._tray_label("tray_settings"), self._open_settings),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Exit", self._tray_quit),
+            pystray.MenuItem(lambda _item: self._tray_label("tray_exit"), self._tray_quit),
         )
-        self.tray = pystray.Icon("QuickMenu", _tray_image(), "QuickMenu — Alt+Q", menu)
+        self.tray = pystray.Icon("QuickMenu", _tray_image(), "QuickMenu", menu)
         threading.Thread(target=self.tray.run, daemon=True).start()
+
+    def _refresh_tray(self) -> None:
+        if self.tray is None:
+            return
+        try:
+            self.tray.update_menu()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ hotkey
 
     def _on_hotkey(self, _icon=None, _item=None) -> None:
         """Called from the hotkey / pystray thread, not from Tk."""
-        if self._busy or self.popup is not None:
+        if self._busy or self.popup is not None or self.settings is not None:
             return
         self._busy = True
         try:
@@ -120,7 +191,15 @@ class QuickMenuApp:
         if self.popup is not None:
             return
         try:
-            self.popup = PopupMenu(self.root, text, previous, hwnd, anchor, self._popup_closed)
+            self.popup = PopupMenu(
+                self.root,
+                text,
+                previous,
+                hwnd,
+                anchor,
+                self._popup_closed,
+                on_settings=self._open_settings,
+            )
             self.popup.show()
         except Exception:
             traceback.print_exc()
@@ -128,6 +207,31 @@ class QuickMenuApp:
 
     def _popup_closed(self) -> None:
         self.popup = None
+
+    # ------------------------------------------------------------------ settings
+
+    def _open_settings(self, _icon=None, _item=None) -> None:
+        self.queue.put(self._show_settings)
+
+    def _show_settings(self) -> None:
+        if self.settings is not None:
+            self.settings.focus()
+            return
+        try:
+            self.settings = SettingsWindow(
+                self.root,
+                self.hotkey,
+                on_close=self._settings_closed,
+                on_change=self._refresh_tray,
+            )
+            self.settings.show()
+        except Exception:
+            traceback.print_exc()
+            self.settings = None
+
+    def _settings_closed(self) -> None:
+        self.settings = None
+        self._refresh_tray()
 
     # ------------------------------------------------------------------ pump / shutdown
 
