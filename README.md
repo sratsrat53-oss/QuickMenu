@@ -74,4 +74,4 @@ I get why trusting a random `.exe` from the internet feels sketchy, so here is t
 
 ## Support
 
-If you find this tool useful, you can leave a tip on [Boosty](https://boosty.to). Totally optional, always appreciated.
+If you find this tool useful, you can leave a tip on [Boosty](boosty.to/stratapak/donate). Totally optional, always appreciated.
