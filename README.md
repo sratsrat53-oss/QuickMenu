@@ -72,6 +72,4 @@ I get why trusting a random `.exe` from the internet feels sketchy, so here is t
 - Google occasionally rate-limits frequent translation requests from the same IP — if that happens, just wait a bit and try again.
 - Tested on Windows 11 and Python 3.13.
 
-## Support
 
-If you find this tool useful, you can leave a tip on [Boosty](boosty.to/stratapak/donate). Totally optional, always appreciated.
