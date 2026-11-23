@@ -1,50 +1,45 @@
+# QuickMenu
 
-QuickMenu
+Всплывающее меню действий по **Alt+Q** для Windows: выделили текст → нажали Alt+Q → рядом с курсором появилось меню.
 
-An Alt+Q popup action menu for Windows: select any text → press Alt+Q → a compact menu appears right next to your cursor.
+## Установка и запуск
 
-Installation & Launch
-
-bash
+```bash
 pip install -r requirements.txt
 pythonw main.py
-Используйте код с осторожностью.
-pythonw runs the app without a console window; use python main.py for debugging.
+```
 
-Features
+`pythonw` запускает без консольного окна; при отладке используйте `python main.py`.
 
-• Translate — RU ↔ EN (and other supported languages) via deep_translator (Google), displaying the result in the same window + a "Copy" button.
-If Google hits a rate limit, a fallback endpoint is used automatically; if there is no connection, a clear error message is shown.
-• Fix Layout — converts QWERTY ↔ ЙЦУКЕН in both directions; the "Replace in text" button pastes the result directly over the selected text.
-• Calculate — safe arithmetic evaluation (ast) supporting + - * / // % **, parentheses, , as a decimal separator, and × ÷ − ^.
-• Google Search — searches the selected text in your default browser.
-• Support on Boosty — opens https://boosty.to/stratapak/donate (actions.BOOSTY_URL constant).
-The window closes on Esc, clicking outside, or losing focus; after clicking "Copy", it closes automatically after 0.65 s.
+## Что умеет
 
-Files
+- **Перевести** — RU ↔ EN через `deep_translator` (Google), результат в этом же окне + кнопка «Копировать».
+  Если Google отвечает лимитом, автоматически используется резервный endpoint; без сети показывается понятная ошибка.
+- **Раскладка** — QWERTY ↔ ЙЦУКЕН в обе стороны, кнопка «Заменить в тексте» вставляет результат вместо выделения.
+- **Посчитать** — безопасный разбор арифметики (`ast`), поддержка `+ - * / // % **`, скобок, `,` как десятичного разделителя, `× ÷ − ^`.
+- **В Google** — поиск выделенного текста в браузере.
+- **Поддержать на Boosty** — открывает https://boosty.to/stratapak/donate (константа `actions.BOOSTY_URL`).
 
+Окно закрывается по `Esc`, клику мимо или потере фокуса; после «Копировать» оно само закрывается через 0.65 с.
 
-File	Description
-main.py	tray icon, global hotkey (RegisterHotKey), Tk event queue
-actions.py	WinAPI clipboard handling, Ctrl+C/Ctrl+V, translation, layout conversion, calculator, links
-popup_ui.py	customtkinter window: preview, buttons, result display, auto-close logic
+## Файлы
 
+| Файл | Назначение |
+| --- | --- |
+| `main.py` | трей-иконка, глобальная горячая клавиша (`RegisterHotKey`), очередь событий в Tk |
+| `actions.py` | буфер обмена через WinAPI, Ctrl+C/Ctrl+V, перевод, раскладка, калькулятор, ссылки |
+| `popup_ui.py` | окно на customtkinter: превью, кнопки, результат, закрытие |
 
-How It Works
+## Как это устроено
 
-• The hotkey is registered via RegisterHotKey(MOD_ALT, VK_Q) rather than by character, so it works regardless of the active keyboard layout (including Russian).
-• Selected text is copied via SendInput using virtual key codes (Ctrl+C), while the previous clipboard text is preserved and restored afterward.
-• "Replace in text" brings the source window to the foreground (SetForegroundWindow bypassing the foreground lock), pastes the text via Ctrl+V, and restores the clipboard.
-• The borderless, topmost window features rounded corners (-transparentcolor), positions itself near the cursor, and snaps to screen edges.
+- Горячая клавиша регистрируется через `RegisterHotKey(MOD_ALT, VK_Q)`, а не по символу, поэтому работает при любой раскладке (в т.ч. русской).
+- Выделение копируется через `SendInput` с виртуальными кодами (`Ctrl+C`), старый текст буфера сохраняется и возвращается.
+- «Заменить в тексте» поднимает исходное окно (`SetForegroundWindow` с обходом foreground lock), вставляет текст через `Ctrl+V` и восстанавливает буфер.
+- Окно без рамок, `topmost`, со скруглёнными углами (`-transparentcolor`), позиционируется у курсора и прижимается к краям экрана.
 
-Limitations
+## Ограничения
 
-• Only text clipboard content is restored: if an image or files were in the clipboard, they will be lost (a limitation of WinAPI plain-text handling).
-• Global hooks/hotkeys do not trigger over windows running as administrator if QuickMenu is launched without admin privileges. Run it as administrator if you need to use it in such windows.
-• Google may rate-limit frequent translation requests from a single IP — an error message will be shown in that case.
-• Tested on Windows 11, Python 3.13.
- 
- 
-Note:
-• SmartScreen warning: Since the .exe is built with PyInstaller and is not code-signed, Windows SmartScreen may show a warning on first launch — just click "More info" → "Run anyway" (the full source code is open in this repository).
-• Auto-install & Startup: The app automatically sets itself up on your PC and adds itself to Windows startup. Once launched, simply check your system tray (or select any text and press Alt+Q) to verify that it is up and running.
+- Восстанавливается только **текстовый** буфер обмена: если там было изображение или файлы, они будут потеряны (ограничение WinAPI-обмена текстом).
+- Глобальные хуки/горячие клавиши не срабатывают поверх окон, запущенных **от администратора**, если QuickMenu запущен без прав администратора. Запустите её от администратора, если нужно работать в таких окнах.
+- Google может ограничивать частые запросы перевода с одного IP — тогда показывается сообщение об ошибке.
+- Проверено на Windows 11, Python 3.13.

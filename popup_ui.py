@@ -33,7 +33,8 @@ LANG_CHOICES = ("EN", "RU", "ES", "DE", "FR", "JA", "ZH", "UK", "PL", "TR")
 UI_STRINGS: dict[str, dict[str, str]] = {
     "EN": {
         "esc": "Esc to close",
-        "no_text": "No text selected — select a fragment and press Alt+Q",
+        "no_text": "No text selected — search Google below or select a fragment and press Alt+Q",
+        "search_ph": "Search Google…",
         "translate": "Translate",
         "layout": "Fix Layout",
         "calc": "Calculate",
@@ -52,11 +53,12 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "tray_open": "Open menu",
         "tray_settings": "Settings…",
         "tray_exit": "Exit",
-        "started": "QuickMenu is running — select text and press {hotkey}",
+        "started": "QuickMenu is running — press {hotkey} to open the menu",
     },
     "RU": {
         "esc": "Esc — закрыть",
-        "no_text": "Текст не выделен — выделите фрагмент и нажмите Alt+Q",
+        "no_text": "Текст не выделен — ищите в Google ниже или выделите фрагмент и нажмите Alt+Q",
+        "search_ph": "Поиск в Google…",
         "translate": "Перевести",
         "layout": "Раскладка",
         "calc": "Посчитать",
@@ -75,7 +77,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "tray_open": "Открыть меню",
         "tray_settings": "Настройки…",
         "tray_exit": "Выход",
-        "started": "QuickMenu запущена — выделите текст и нажмите {hotkey}",
+        "started": "QuickMenu запущена — нажмите {hotkey}, чтобы открыть меню",
     },
 }
 
@@ -297,6 +299,37 @@ class PopupMenu:
             font=ctk.CTkFont("Segoe UI", 12),
         )
 
+        # Always-available search line: works with or without a text selection.
+        self.search_row = ctk.CTkFrame(body, fg_color="transparent")
+        self.search_row.pack(fill="x", pady=(10, 0))
+        self.search_entry = ctk.CTkEntry(
+            self.search_row,
+            placeholder_text=self._t["search_ph"],
+            height=32,
+            corner_radius=8,
+            fg_color=FIELD,
+            border_width=1,
+            border_color=BORDER,
+            text_color=FG,
+            placeholder_text_color=MUTED,
+            font=ctk.CTkFont("Segoe UI", 12),
+        )
+        self.search_entry.pack(side="left", fill="x", expand=True)
+        self.search_entry.bind("<Return>", lambda _event: self._search())
+        self.search_btn = ctk.CTkButton(
+            self.search_row,
+            text="→",
+            command=self._search,
+            width=40,
+            height=32,
+            corner_radius=8,
+            fg_color="#2a3550",
+            hover_color="#34426b",
+            text_color=FG,
+            font=ctk.CTkFont("Segoe UI", 14),
+        )
+        self.search_btn.pack(side="left", padx=(6, 0))
+
         self.boosty = ctk.CTkButton(
             body,
             text=self._t["boosty"],
@@ -368,6 +401,7 @@ class PopupMenu:
         self.win.bind("<Escape>", lambda _event: self.close())
         self.win.bind("<FocusOut>", self._on_focus_out)
         self.win.after(60, self._keep_focus)
+        self.win.after(100, self._focus_search)
         self.win.after(40, self._drain)
         self.win.after(150, self._watch_mouse)
 
@@ -492,6 +526,7 @@ class PopupMenu:
         self._t = UI_STRINGS[self.ui_lang]
         self.esc_label.configure(text=self._t["esc"])
         self.boosty.configure(text=self._t["boosty"])
+        self.search_entry.configure(placeholder_text=self._t["search_ph"])
         for key, button in zip(self.button_keys, self.buttons):
             button.configure(text=self._t[key])
         if not self.text:
@@ -537,6 +572,21 @@ class PopupMenu:
 
         self._start(work, "calculating", "copy", self._copy)
 
+    def _focus_search(self) -> None:
+        if self._closed:
+            return
+        try:
+            self.search_entry.focus_set()
+        except tk.TclError:
+            pass
+
+    def _search(self) -> None:
+        query = self.search_entry.get().strip()
+        if not query:
+            return
+        actions.google_search(query)
+        self.close()
+
     def _google(self) -> None:
         if not self.text:
             return
@@ -549,7 +599,7 @@ class PopupMenu:
         self._status_key = ""
         self._action_cb = action_cb
         if not self.result_box.winfo_manager():
-            self.result_box.pack(fill="x")
+            self.result_box.pack(fill="x", before=self.search_row)
         self._fill(self.res_text, self._t[status_key])
         self.status.configure(text="", text_color=MUTED)
         self.action_btn.pack_forget()
