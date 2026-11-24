@@ -1,82 +1,76 @@
-# QuickMenu
 
-Маленькая утилита для Windows, которая экономит время на мелочах. Нажимаешь **Alt+Q** (клавишу можно поменять), рядом с курсором появляется меню: перевести текст, поправить раскладку, посчитать пример или быстро загуглить. Выделенный текст для этого не обязателен: можно просто открыть меню и набрать запрос.
+QuickMenu
 
-Без прав администратора, без слежки за клавиатурой, исходники открыты. Можно прочитать, что она делает.
+A lightweight Windows utility that saves time on small daily tasks. Press Alt+Q (customizable), and a menu pops up right next to your cursor: translate text, fix keyboard layout, calculate an expression, or quickly Google something. You don't even need to select text first—just open the menu and type your query.
+No administrator rights required, no keylogging, and the source code is completely open. You can read it yourself to see what it does.
 
-## Как запустить
+How to Run
 
-```bash
+bash
 pip install -r requirements.txt
 pythonw main.py
-```
+Используйте код с осторожностью.
+pythonw runs the app without a console window. If something doesn't work and you want to see the error logs, run it via python main.py.
+Upon launch, a notification will show your active hotkey, and a tray icon will appear. From the tray menu, you can open the popup, access settings, or exit. If you launch QuickMenu a second time, the duplicate instance will silently close.
 
-`pythonw` запускает программу без консольного окна. Если что-то не работает и хочется увидеть ошибки, запускай через `python main.py`.
+Want to build the .exe yourself?
 
-После запуска появится уведомление с горячей клавишей, а в трее иконка. Через неё можно открыть меню, зайти в настройки или выйти. Если запустить QuickMenu второй раз, лишняя копия просто тихо закроется.
-
-Хочешь собрать exe сам:
-
-```bash
+bash
 pip install pyinstaller
 pyinstaller QuickMenu.spec
-```
+Используйте код с осторожностью.
+The compiled QuickMenu.exe will appear in the dist folder.
 
-Готовый `QuickMenu.exe` появится в папке `dist`.
+Features
 
-## Что умеет
+• Translate. Two modes, selectable next to the button:
+	• Text — translates selected text. The source language is auto-detected, and it translates into your chosen target language: EN, RU, ES, DE, FR, JA, ZH, KO, UK, PL, or TR.
+	• Image — no text selection needed: click "Translate," the screen freezes, drag your mouse over an area containing text, and the app recognizes it using Windows' built-in OCR and translates it. This allows you to translate text on images and screenshots.
+	• The result appears in the same window and can be copied with a single click. If Google blocks requests due to rate limits, the app tries fallback providers—and if nothing works, it will honestly let you know.
+• Layout. Typed "ghbdtn" instead of "привет"? Click the button to convert the text to the right layout. Works both ways, and "Replace in text" immediately pastes the fixed version over your selection.
+• Calculate. Supports + - * / // % **, parentheses, commas instead of decimal points, and symbols like × ÷ − ^. Evaluates math safely without using eval.
+• Google. Opens a web search for the selected text.
+• Search bar at the bottom. Press the hotkey, type your query, hit Enter. No need to open a browser beforehand.
+• Settings (⚙ button or tray menu). Change the interface language (Russian or English) and customize your hotkey. New hotkeys take effect immediately without restarting.
+You can drag the window by its top bar (even to another monitor) and resize its width by dragging the right edge (the width is saved). It closes when you press Esc, click outside, or when it loses focus.
 
-- **Перевести.** Два режима, выбираются рядом с кнопкой:
-  - **Текст** — переводит выделенный текст. Язык определяется сам, переводит на тот, что выбран рядом: EN, RU, ES, DE, FR, JA, ZH, KO, UK, PL или TR.
-  - **Фото** — выделять текст не нужно: жмёшь «Перевести», экран замирает, обводишь мышкой область с текстом, и программа распознаёт её встроенным OCR Windows, а потом переводит. Текст выделения не обязателен, так что можно переводить надписи на картинках и скриншотах.
+Security & Privacy
 
-  Результат появляется в том же окне, его можно скопировать одной кнопкой. Если Google ругается на слишком частые запросы, программа пробует запасные варианты, а если ничего не вышло, честно скажет об этом.
-- **Раскладка.** Набрал «ghbdtn» вместо «привет»? Нажми кнопку, и текст превратится в нужный. Работает в обе стороны, а «Заменить в тексте» сразу вставит исправленное вместо выделения.
-- **Посчитать.** Понимает `+ - * / // % **`, скобки, запятую вместо точки и значки `× ÷ − ^`. Считает безопасно, без `eval`.
-- **В Google.** Открывает поиск по выделенному тексту.
-- **Строка поиска внизу.** Нажал горячую клавишу, набрал запрос, Enter. Браузер открывать заранее не нужно.
-- **Настройки** (кнопка ⚙ или пункт в трее). Здесь меняется язык интерфейса (русский или английский) и горячая клавиша. Новая клавиша начинает работать сразу, без перезапуска.
+I understand that trusting an unknown .exe is hard, so here is the short and honest breakdown:
+• No admin rights are required.
+• No keylogging. The hotkey is registered via native Windows API (RegisterHotKey), not by hooking or intercepting all keystrokes.
+• Selected text is copied only at the exact moment you press the hotkey, and your previous clipboard text is restored afterward.
+• Network access is used strictly for translation: only the text you explicitly send for translation goes to Google Translate (or MyMemory as a fallback). Nothing else.
+• Image text recognition (Windows.Media.Ocr) runs 100% locally. Screenshots are never uploaded anywhere—only the extracted text is sent for translation.
+• All source code is right here. You can inspect it or compile it yourself.
+• The .exe is unsigned because code-signing certificates cost money and this is a free project. Because of this, Windows SmartScreen might show a warning. If you don't trust the pre-built .exe, run it from the source or build it yourself.
 
-Окно можно двигать за верхнюю полоску, хоть на другой монитор, а ширину — тянуть за правый край (запоминается). Закрывается по `Esc`, по клику в сторону или когда теряет фокус.
+Project Structure
 
-## Про безопасность
 
-Понимаю, что незнакомым exe доверять не хочется, поэтому коротко и честно:
+File	Description
+main.py	System tray icon, startup notification, single-instance protection, hotkey registration
+actions.py	Clipboard handling, translation, layout switcher, calculator, search, settings
+popup_ui.py	UI windows built with customtkinter: popup menu and settings
+quickmenu_config.json	Your user settings, generated next to the executable/script
+QuickMenu.spec	PyInstaller build configuration
 
-- Права администратора не нужны.
-- Клавиатуру программа не прослушивает. Горячая клавиша зарегистрирована средствами Windows (`RegisterHotKey`), а не перехватом всех нажатий.
-- Выделенный текст копируется только в тот момент, когда ты жмёшь горячую клавишу, а прежнее содержимое буфера возвращается на место.
-- Сеть используется только для перевода: в Google Translate (или запасной MyMemory) уходит текст, который ты сам отправил на перевод. Больше ничего.
-- Распознавание текста с фото (`Windows.Media.Ocr`) работает локально, картинка никуда не отправляется — в сеть уходит только уже распознанный текст.
-- Весь код лежит здесь. Можно прочитать или собрать самому.
-- Exe не подписан, потому что цифровая подпись стоит денег, а проект бесплатный. Поэтому Windows SmartScreen может предупредить. Если не доверяешь готовому exe, запусти из исходников или собери сам.
 
-## Из чего состоит
+Under the Hood
 
-| Файл | Что делает |
-| --- | --- |
-| `main.py` | иконка в трее, уведомление при запуске, защита от второго экземпляра, горячая клавиша |
-| `actions.py` | буфер обмена, перевод, раскладка, калькулятор, поиск, настройки |
-| `popup_ui.py` | окна на customtkinter: меню и настройки |
-| `quickmenu_config.json` | твои настройки, создаётся рядом с программой |
-| `QuickMenu.spec` | сценарий сборки для PyInstaller |
+• The hotkey is bound to the physical key scan code, so it works regardless of your active keyboard layout (including Cyrillic).
+• To grab selected text, the app simulates Ctrl+C via SendInput, backs up your previous clipboard text, and restores it afterward.
+• For "Replace in text," focus is returned to the original window first, the text is pasted via Ctrl+V, and the clipboard is restored.
+• A named Windows mutex prevents multiple instances from running simultaneously.
+• Borderless, always-on-top window with rounded corners. Spawns near the cursor on the active monitor while respecting taskbar boundaries.
 
-## Немного изнутри
+Good to Know
 
-- Горячая клавиша привязана к физической клавише, поэтому работает при любой раскладке, в том числе русской.
-- Чтобы взять выделенный текст, программа нажимает `Ctrl+C` через `SendInput`, запоминает старый буфер и потом возвращает его.
-- Для «Заменить в тексте» сначала возвращается фокус в исходное окно, потом вставляется текст через `Ctrl+V`, и буфер восстанавливается.
-- Чтобы не запускаться дважды, используется именованный мьютекс Windows.
-- Окно без рамки, всегда поверх остальных, со скруглёнными углами. Открывается у курсора на том мониторе, где он сейчас, с учётом панели задач.
-
-## Что стоит знать
-
-- Возвращается только **текстовый** буфер обмена. Если до этого там лежала картинка или файлы, они пропадут.
-- Поверх окон, запущенных **от администратора**, горячая клавиша не сработает, если сама QuickMenu запущена без прав. Запускай её от администратора, только если это правда нужно.
-- Если в активной программе `Ctrl+C` означает «прервать» (например, в консоли), горячая клавиша отправит ей именно это.
-- Google иногда блокирует слишком частые переводы с одного IP. Тогда нужно просто подождать.
-- Проверено на Windows 11 и Python 3.13.
-
-## Поддержать
-
-Если программа пригодилась, можно закинуть донат на [Boosty](https://boosty.to/stratapak/donate). Это необязательно, но приятно.
+• Only plain text in the clipboard is backed up and restored. If you had an image or copied files in your clipboard, they will be overwritten.
+• Hotkeys won't trigger over windows running as Administrator unless QuickMenu itself is also run as Administrator. Only run it as admin if you genuinely need to.
+• If Ctrl+C acts as an interrupt/cancel command in your active window (e.g., inside a terminal/console), pressing the hotkey will send that interrupt signal.
+• Google occasionally temporarily blocks IPs that send too many translation requests in a short time. If that happens, just wait a bit.
+• Tested on Windows 11 and Python 3.13.
+If you'd like me to refine this for a GitHub README, let me know:
+• Your GitHub username and repository name (so I can add proper clone/download commands and links)
+• Preferred tone (casual indie dev, formal documentation, or concise)
