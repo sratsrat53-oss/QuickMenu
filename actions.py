@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time
+import traceback
 import webbrowser
 from ctypes import wintypes
 from urllib.parse import quote
@@ -216,7 +217,7 @@ def _write_config(data: dict) -> None:
         with open(_config_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception:
-        pass
+        traceback.print_exc()
 
 
 def get_target_lang() -> str:
@@ -515,12 +516,13 @@ def alt_pressed() -> bool:
     return bool(_u32.GetAsyncKeyState(0x12) & 0x8000)
 
 
-def _wait_alt_released(timeout: float = 0.6) -> None:
+def _wait_alt_released(timeout: float = 0.6) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not alt_pressed():
-            return
+            return True
         time.sleep(0.01)
+    return not alt_pressed()
 
 
 def _wait_for_copy(timeout: float) -> str | None:
@@ -537,7 +539,9 @@ def capture_selection(timeout: float = 0.5) -> tuple[str, str | None]:
     """Silently copies selection via Ctrl+C. Returns (text, previous_clipboard)."""
     previous = clip_get_text()
     clip_set_text(_PROBE)
-    _wait_alt_released()
+    if not _wait_alt_released():
+        clip_set_text(previous or "")
+        return "", previous
     time.sleep(0.01)
     send_ctrl(ord("C"))
     copied = _wait_for_copy(timeout)
@@ -573,7 +577,7 @@ def _translate_mymemory(text: str, target: str) -> str:
     """Secondary free translator fallback when Google rate-limits (HTTP 429)."""
     import requests
 
-    lang_pair = f"{'ru' if has_cyrillic(text) else 'en'}|{target}"
+    lang_pair = f"Autodetect|{target}"
     response = requests.get(
         "https://api.mymemory.translated.net/get",
         params={"q": text[:500], "langpair": lang_pair},

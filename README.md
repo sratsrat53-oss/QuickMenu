@@ -1,29 +1,82 @@
 # QuickMenu
 
-A small Windows utility for everyday text tasks. Press **Alt+Q** (the hotkey is configurable) and a menu pops up next to your cursor: translate text, fix a wrong keyboard layout, calculate an expression, or search Google. Selecting text first is optional: you can open the menu and just type a query.
+Маленькая утилита для Windows, которая экономит время на мелочах. Нажимаешь **Alt+Q** (клавишу можно поменять), рядом с курсором появляется меню: перевести текст, поправить раскладку, посчитать пример или быстро загуглить. Выделенный текст для этого не обязателен: можно просто открыть меню и набрать запрос.
 
-## How to run
+Без прав администратора, без слежки за клавиатурой, исходники открыты. Можно прочитать, что она делает.
+
+## Как запустить
 
 ```bash
 pip install -r requirements.txt
 pythonw main.py
 ```
 
-`pythonw` runs the app without a console window. If something doesn't work and you want to see the errors, run `python main.py` instead.
+`pythonw` запускает программу без консольного окна. Если что-то не работает и хочется увидеть ошибки, запускай через `python main.py`.
 
-After launch you'll get a notification with the hotkey and a tray icon. From the tray you can open the menu, go to settings, or exit.
+После запуска появится уведомление с горячей клавишей, а в трее иконка. Через неё можно открыть меню, зайти в настройки или выйти. Если запустить QuickMenu второй раз, лишняя копия просто тихо закроется.
 
-## What it does
+Хочешь собрать exe сам:
 
-- **Translate** — two modes, switchable next to the button:
-  - **Text** translates the selected text. The source language is detected automatically; pick the target: EN, RU, ES, DE, FR, JA, ZH, UK, PL or TR.
-  - **Photo** needs no selection: click "Translate", the screen freezes, drag a rectangle over any text (an image, a screenshot, a video), and the app recognizes it with the built-in Windows OCR and translates it.
+```bash
+pip install pyinstaller
+pyinstaller QuickMenu.spec
+```
 
-  The result appears in the same window and can be copied with one click.
-- **Fix Layout** — typed "ghbdtn" instead of "привет"? One click converts the text to the right layout, in both directions. "Replace in text" puts the fixed version straight over your selection.
-- **Calculate** — supports `+ - * / // % **`, parentheses, a comma as the decimal separator, and the symbols `× ÷ − ^`.
-- **Google Search** — searches for the selected text.
-- **Search bar** — press the hotkey, type a query, hit Enter. No need to open a browser first.
-- **Settings** (the ⚙ button or the tray menu) — change the interface language (English or Russian) and the hotkey. The new hotkey works immediately, no restart needed.
+Готовый `QuickMenu.exe` появится в папке `dist`.
 
-The window can be dragged by its top strip, and closes with `Esc`, a click outside, or when it loses focus.
+## Что умеет
+
+- **Перевести.** Два режима, выбираются рядом с кнопкой:
+  - **Текст** — переводит выделенный текст. Язык определяется сам, переводит на тот, что выбран рядом: EN, RU, ES, DE, FR, JA, ZH, KO, UK, PL или TR.
+  - **Фото** — выделять текст не нужно: жмёшь «Перевести», экран замирает, обводишь мышкой область с текстом, и программа распознаёт её встроенным OCR Windows, а потом переводит. Текст выделения не обязателен, так что можно переводить надписи на картинках и скриншотах.
+
+  Результат появляется в том же окне, его можно скопировать одной кнопкой. Если Google ругается на слишком частые запросы, программа пробует запасные варианты, а если ничего не вышло, честно скажет об этом.
+- **Раскладка.** Набрал «ghbdtn» вместо «привет»? Нажми кнопку, и текст превратится в нужный. Работает в обе стороны, а «Заменить в тексте» сразу вставит исправленное вместо выделения.
+- **Посчитать.** Понимает `+ - * / // % **`, скобки, запятую вместо точки и значки `× ÷ − ^`. Считает безопасно, без `eval`.
+- **В Google.** Открывает поиск по выделенному тексту.
+- **Строка поиска внизу.** Нажал горячую клавишу, набрал запрос, Enter. Браузер открывать заранее не нужно.
+- **Настройки** (кнопка ⚙ или пункт в трее). Здесь меняется язык интерфейса (русский или английский) и горячая клавиша. Новая клавиша начинает работать сразу, без перезапуска.
+
+Окно можно двигать за верхнюю полоску, хоть на другой монитор, а ширину — тянуть за правый край (запоминается). Закрывается по `Esc`, по клику в сторону или когда теряет фокус.
+
+## Про безопасность
+
+Понимаю, что незнакомым exe доверять не хочется, поэтому коротко и честно:
+
+- Права администратора не нужны.
+- Клавиатуру программа не прослушивает. Горячая клавиша зарегистрирована средствами Windows (`RegisterHotKey`), а не перехватом всех нажатий.
+- Выделенный текст копируется только в тот момент, когда ты жмёшь горячую клавишу, а прежнее содержимое буфера возвращается на место.
+- Сеть используется только для перевода: в Google Translate (или запасной MyMemory) уходит текст, который ты сам отправил на перевод. Больше ничего.
+- Распознавание текста с фото (`Windows.Media.Ocr`) работает локально, картинка никуда не отправляется — в сеть уходит только уже распознанный текст.
+- Весь код лежит здесь. Можно прочитать или собрать самому.
+- Exe не подписан, потому что цифровая подпись стоит денег, а проект бесплатный. Поэтому Windows SmartScreen может предупредить. Если не доверяешь готовому exe, запусти из исходников или собери сам.
+
+## Из чего состоит
+
+| Файл | Что делает |
+| --- | --- |
+| `main.py` | иконка в трее, уведомление при запуске, защита от второго экземпляра, горячая клавиша |
+| `actions.py` | буфер обмена, перевод, раскладка, калькулятор, поиск, настройки |
+| `popup_ui.py` | окна на customtkinter: меню и настройки |
+| `quickmenu_config.json` | твои настройки, создаётся рядом с программой |
+| `QuickMenu.spec` | сценарий сборки для PyInstaller |
+
+## Немного изнутри
+
+- Горячая клавиша привязана к физической клавише, поэтому работает при любой раскладке, в том числе русской.
+- Чтобы взять выделенный текст, программа нажимает `Ctrl+C` через `SendInput`, запоминает старый буфер и потом возвращает его.
+- Для «Заменить в тексте» сначала возвращается фокус в исходное окно, потом вставляется текст через `Ctrl+V`, и буфер восстанавливается.
+- Чтобы не запускаться дважды, используется именованный мьютекс Windows.
+- Окно без рамки, всегда поверх остальных, со скруглёнными углами. Открывается у курсора на том мониторе, где он сейчас, с учётом панели задач.
+
+## Что стоит знать
+
+- Возвращается только **текстовый** буфер обмена. Если до этого там лежала картинка или файлы, они пропадут.
+- Поверх окон, запущенных **от администратора**, горячая клавиша не сработает, если сама QuickMenu запущена без прав. Запускай её от администратора, только если это правда нужно.
+- Если в активной программе `Ctrl+C` означает «прервать» (например, в консоли), горячая клавиша отправит ей именно это.
+- Google иногда блокирует слишком частые переводы с одного IP. Тогда нужно просто подождать.
+- Проверено на Windows 11 и Python 3.13.
+
+## Поддержать
+
+Если программа пригодилась, можно закинуть донат на [Boosty](https://boosty.to/stratapak/donate). Это необязательно, но приятно.

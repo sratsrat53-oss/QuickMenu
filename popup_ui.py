@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 import tkinter as tk
+import traceback
 
 import customtkinter as ctk
 from PIL import ImageGrab, ImageTk
@@ -85,7 +86,7 @@ PREVIEW_H = actions.DEFAULT_PREVIEW_HEIGHT
 RESULT_H = 92
 
 # Target languages offered in the popup; keys must exist in actions.TARGET_LANGUAGES.
-LANG_CHOICES = ("EN", "RU", "ES", "DE", "FR", "JA", "ZH", "UK", "PL", "TR")
+LANG_CHOICES = ("EN", "RU", "ES", "DE", "FR", "JA", "ZH", "KO", "UK", "PL", "TR")
 
 # Translate modes -> keys of their labels in UI_STRINGS.
 MODE_LABELS = {"text": "mode_text", "photo": "mode_photo"}
@@ -1791,7 +1792,7 @@ class SettingsWindow:
             try:
                 self.on_change()
             except Exception:
-                pass
+                traceback.print_exc()
 
     def _set_status(self, key: str, color: str) -> None:
         self._status_key = key
@@ -1862,6 +1863,7 @@ class SettingsWindow:
         try:
             ok = bool(self.hotkey.set_combo(combo))
         except Exception:
+            traceback.print_exc()
             ok = False
         if ok:
             self._combo = combo
