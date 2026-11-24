@@ -33,6 +33,17 @@ TARGET_LANGUAGES: dict[str, str] = {
 
 UI_LANGUAGES: dict[str, str] = {"EN": "en", "RU": "ru"}
 
+# How the Translate button gets its text: from the selection or from a screenshot.
+TRANSLATE_MODES = ("text", "photo")
+
+DEFAULT_WINDOW_WIDTH = 520
+MIN_WINDOW_WIDTH = 380
+MAX_WINDOW_WIDTH = 900
+
+DEFAULT_PREVIEW_HEIGHT = 74
+MIN_PREVIEW_HEIGHT = 44
+MAX_PREVIEW_HEIGHT = 360
+
 DEFAULT_HOTKEY = "Alt+Q"
 
 MOD_ALT = 0x0001
@@ -221,6 +232,19 @@ def set_target_lang(lang_code: str) -> None:
     _write_config(data)
 
 
+def get_translate_mode() -> str:
+    mode = _read_config().get("translate_mode", "text")
+    return mode if mode in TRANSLATE_MODES else "text"
+
+
+def set_translate_mode(mode: str) -> None:
+    if mode not in TRANSLATE_MODES:
+        return
+    data = _read_config()
+    data["translate_mode"] = mode
+    _write_config(data)
+
+
 def get_ui_lang() -> str:
     lang = _read_config().get("ui_lang", "EN")
     return lang if lang in UI_LANGUAGES else "EN"
@@ -231,6 +255,55 @@ def set_ui_lang(lang_code: str) -> None:
         return
     data = _read_config()
     data["ui_lang"] = lang_code
+    _write_config(data)
+
+
+def get_window_width() -> int:
+    """Popup width saved by dragging its right edge."""
+    try:
+        width = int(_read_config().get("window_width", DEFAULT_WINDOW_WIDTH))
+    except (TypeError, ValueError):
+        return DEFAULT_WINDOW_WIDTH
+    return max(MIN_WINDOW_WIDTH, min(MAX_WINDOW_WIDTH, width))
+
+
+def set_window_width(width) -> None:
+    try:
+        value = int(width)
+    except (TypeError, ValueError):
+        return
+    data = _read_config()
+    data["window_width"] = max(MIN_WINDOW_WIDTH, min(MAX_WINDOW_WIDTH, value))
+    _write_config(data)
+
+
+def get_preview_height() -> int:
+    """Height of the preview box, changed by dragging the menu's bottom edge."""
+    try:
+        height = int(_read_config().get("preview_height", DEFAULT_PREVIEW_HEIGHT))
+    except (TypeError, ValueError):
+        return DEFAULT_PREVIEW_HEIGHT
+    return max(MIN_PREVIEW_HEIGHT, min(MAX_PREVIEW_HEIGHT, height))
+
+
+def set_preview_height(height) -> None:
+    try:
+        value = int(height)
+    except (TypeError, ValueError):
+        return
+    data = _read_config()
+    data["preview_height"] = max(MIN_PREVIEW_HEIGHT, min(MAX_PREVIEW_HEIGHT, value))
+    _write_config(data)
+
+
+def get_theme() -> str:
+    theme = _read_config().get("theme", "Night")
+    return theme if isinstance(theme, str) else "Night"
+
+
+def set_theme(name: str) -> None:
+    data = _read_config()
+    data["theme"] = str(name)
     _write_config(data)
 
 
@@ -547,6 +620,72 @@ def translate_text(text: str, target_code: str = "EN") -> str:
         except Exception as exc:
             last_exc = exc
     raise last_exc
+
+
+# --------------------------------------------------------------------------- ocr
+
+_OCR_LANGUAGE_TAGS = (
+    "en-US", "ru-RU", "de-DE", "es-ES", "fr-FR", "it-IT", "pl-PL", "uk-UA",
+    "tr-TR", "pt-BR", "nl-NL", "zh-Hans", "ja-JP", "ko-KR",
+)
+
+
+def _ocr_engine():
+    """Windows OCR engine for one of the installed languages, or None."""
+    from winrt.windows.globalization import Language
+    from winrt.windows.media.ocr import OcrEngine
+
+    engine = OcrEngine.try_create_from_user_profile_languages()
+    if engine is not None:
+        return engine
+    for tag in _OCR_LANGUAGE_TAGS:
+        engine = OcrEngine.try_create_from_language(Language(tag))
+        if engine is not None:
+            return engine
+    return None
+
+
+def _recognize_file(path: str) -> str:
+    import asyncio
+
+    async def run() -> str:
+        from winrt.windows.graphics.imaging import BitmapDecoder
+        from winrt.windows.storage import FileAccessMode, StorageFile
+
+        engine = _ocr_engine()
+        if engine is None:
+            raise RuntimeError("Windows OCR is not available")
+        file = await StorageFile.get_file_from_path_async(path)
+        stream = await file.open_async(FileAccessMode.READ)
+        decoder = await BitmapDecoder.create_async(stream)
+        bitmap = await decoder.get_software_bitmap_async()
+        result = await engine.recognize_async(bitmap)
+        return "\n".join(line.text.strip() for line in result.lines if line.text.strip())
+
+    return asyncio.run(run())
+
+
+def ocr_image(image) -> str:
+    """Recognize text on a PIL image with the offline Windows OCR engine."""
+    import tempfile
+    from PIL import Image, ImageOps
+
+    if image.width < 8 or image.height < 8:
+        return ""
+    if image.width < 900:
+        image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
+    # A white margin: Windows OCR drops lines that touch the image edge.
+    image = ImageOps.expand(image.convert("RGB"), border=16, fill="white")
+    handle, path = tempfile.mkstemp(suffix=".png", prefix="quickmenu_ocr_")
+    os.close(handle)
+    try:
+        image.save(path)
+        return _recognize_file(path)
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 # --------------------------------------------------------------------------- keyboard layout

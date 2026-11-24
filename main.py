@@ -1,5 +1,4 @@
 """QuickMenu — Alt+Q action menu with a tray icon."""
-
 from __future__ import annotations
 
 import ctypes
@@ -160,6 +159,9 @@ class QuickMenuApp:
         self.settings: SettingsWindow | None = None
         self.tray: pystray.Icon | None = None
         self._busy = False
+        # Last menu session: (text, previous_clipboard, target_hwnd, anchor).
+        # Kept so that "Done" in settings can bring exactly the same menu back.
+        self._menu_context: tuple | None = None
         self.hotkey = HotkeyListener(self._on_hotkey, actions.get_hotkey())
         self.hotkey.start()
         self.hotkey.ready.wait(2.0)
@@ -202,7 +204,6 @@ class QuickMenuApp:
             pass
 
     # ------------------------------------------------------------------ hotkey
-
     def _on_hotkey(self, _icon=None, _item=None) -> None:
         """Called from the hotkey / pystray thread, not from Tk."""
         if self._busy or self.popup is not None or self.settings is not None:
@@ -218,9 +219,10 @@ class QuickMenuApp:
         finally:
             self._busy = False
 
-    def _show(self, text: str, previous, hwnd: int, anchor) -> None:
+    def _show(self, text: str, previous, hwnd: int, anchor, origin_rect=None) -> None:
         if self.popup is not None:
             return
+        self._menu_context = (text, previous, hwnd, anchor)
         try:
             self.popup = PopupMenu(
                 self.root,
@@ -230,6 +232,7 @@ class QuickMenuApp:
                 anchor,
                 self._popup_closed,
                 on_settings=self._open_settings,
+                origin_rect=origin_rect,
             )
             self.popup.show()
         except Exception:
@@ -240,11 +243,20 @@ class QuickMenuApp:
         self.popup = None
 
     # ------------------------------------------------------------------ settings
+    def _open_settings(self, origin_rect=None, _item=None) -> None:
+        rect = origin_rect if isinstance(origin_rect, tuple) else None
+        if self.popup is None:
+            # Opened from the tray: there is no captured selection, so "Done"
+            # will bring up an empty menu (the search line still works).
+            self._menu_context = (
+                "",
+                None,
+                actions.get_foreground_window(),
+                actions.get_cursor_pos(),
+            )
+        self.queue.put(lambda: self._show_settings(rect))
 
-    def _open_settings(self, _icon=None, _item=None) -> None:
-        self.queue.put(self._show_settings)
-
-    def _show_settings(self) -> None:
+    def _show_settings(self, origin_rect=None) -> None:
         if self.settings is not None:
             self.settings.focus()
             return
@@ -254,6 +266,9 @@ class QuickMenuApp:
                 self.hotkey,
                 on_close=self._settings_closed,
                 on_change=self._refresh_tray,
+                on_quit=self._shutdown,
+                on_done=self._back_to_menu,
+                origin_rect=origin_rect,
             )
             self.settings.show()
         except Exception:
@@ -264,8 +279,15 @@ class QuickMenuApp:
         self.settings = None
         self._refresh_tray()
 
-    # ------------------------------------------------------------------ pump / shutdown
+    def _back_to_menu(self, origin_rect=None) -> None:
+        """'Done' in settings: show the main menu again, where the settings window was."""
+        if self.popup is not None or self.settings is not None:
+            return
+        context = self._menu_context or ("", None, 0, actions.get_cursor_pos())
+        text, previous, hwnd, anchor = context
+        self._show(text, previous, hwnd, anchor, origin_rect=origin_rect)
 
+    # ------------------------------------------------------------------ pump / shutdown
     def _pump(self) -> None:
         while True:
             try:
@@ -283,7 +305,7 @@ class QuickMenuApp:
 
     def _shutdown(self) -> None:
         if self.popup is not None:
-            self.popup.close()
+            self.popup.close(animate=False)
         self.hotkey.stop()
         if self.tray is not None:
             try:
